@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
 </head>
 <body>
   <section id="login" class="screen hidden">
@@ -115,6 +115,7 @@
         <select id="fBunnyF" class="sel"><option value="">Bunny: todos</option><option value="1">Já no Bunny</option><option value="0">Fora do Bunny</option></select>
         <select id="fFav" class="sel"><option value="">⭐ Todos</option><option value="1">⭐ Só favoritos</option></select>
         <select id="fSimilar" class="sel"><option value="">Parecidos: todos</option><option value="1">Só os parecidos (revisar)</option></select>
+        <select id="fDerived" class="sel"><option value="">Originais e derivados</option><option value="orig">Só originais</option><option value="frames">📸 Fotos tiradas de vídeo</option><option value="kit">🧰 Kit pro app</option></select>
       </div>
       <div class="toolbar">
         <span id="libCount" class="muted small"></span>
@@ -214,12 +215,29 @@
     </div>
     <div id="selMore" class="selbar-more hidden">
       <button data-act="fav" class="btn small-btn">⭐ Favoritar</button>
+      <button data-act="frames" class="btn small-btn">📸 Fotos dos vídeos</button>
+      <button data-act="kit" class="btn small-btn">🧰 Kit pro app</button>
       <button data-act="addTags" class="btn small-btn">🏷 Legenda</button>
       <button data-act="usedToggle" class="btn small-btn">✓ Usado / não usado</button>
       <button data-act="links" class="btn small-btn">🔗 Copiar links do Bunny</button>
       <button data-act="removeFolder" class="btn small-btn hidden" id="selRemoveFolder">Tirar da pasta</button>
       <button data-act="freeLocal" class="btn small-btn">🧹 Liberar espaço</button>
       <button data-act="delete" class="btn danger small-btn">🗑 Apagar</button>
+    </div>
+  </div>
+
+  <!-- Kit pro app: escolher formatos -->
+  <div id="kitSheet" class="sheet hidden">
+    <div class="sheet-box">
+      <h3 id="kitTitle">Kit pro app</h3>
+      <p id="kitHint" class="small muted"></p>
+      <div class="kit-opts">
+        <label class="check-line"><input type="checkbox" value="916" checked> <span><b>9:16</b> — Status / stories</span></label>
+        <label class="check-line"><input type="checkbox" value="45" checked> <span><b>4:5</b> — feed e grupos</span></label>
+        <label class="check-line"><input type="checkbox" value="blur" checked> <span><b>Borrada</b> — isca de venda (borrão + clique)</span></label>
+      </div>
+      <button id="kitGo" class="btn primary wide">🧰 Gerar kit</button>
+      <button id="kitCancel" class="btn ghost wide">Cancelar</button>
     </div>
   </div>
 
@@ -256,6 +274,10 @@
         <button id="vClipB" class="btn small-btn">Fim <b id="vClipBT">—</b></button>
         <button id="vClipGo" class="btn ghost small-btn">Cortar trecho</button>
       </div>
+      <div id="vMake" class="vmake">
+        <button id="vFrames" class="btn small-btn">📸 Tirar fotos do vídeo</button>
+        <button id="vKit" class="btn small-btn">🧰 Kit pro app</button>
+      </div>
       <div class="vbar">
         <a id="vDl" class="act primary"><i>⬇</i><span>Baixar</span></a>
         <button id="vFav" class="act"><i>☆</i><span>Favorito</span></button>
@@ -271,6 +293,6 @@
   <div id="toast" class="toast hidden"></div>
   <form id="zipForm" method="post" action="/api/zip" class="hidden"><input name="ids"><input name="name"></form>
 
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

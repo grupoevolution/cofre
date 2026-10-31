@@ -247,7 +247,7 @@ $('#fBunny').onclick = async () => {
 };
 
 // ---------- Biblioteca ----------
-const FILTERS = { q: '#q', type: '#fType', orient: '#fOrient', dur: '#fDur', hd: '#fHd', site: '#fSite', used: '#fUsed', bunny: '#fBunnyF', fav: '#fFav', similar: '#fSimilar' };
+const FILTERS = { q: '#q', type: '#fType', orient: '#fOrient', dur: '#fDur', hd: '#fHd', site: '#fSite', used: '#fUsed', bunny: '#fBunnyF', fav: '#fFav', similar: '#fSimilar', derived: '#fDerived' };
 function libQuery() {
   const p = new URLSearchParams();
   if (S.folder) p.set('folder', S.folder);
@@ -306,6 +306,8 @@ function tileHtml(it) {
     it.used && `<i class="ok" title="já usei${it.usedIn?.length ? ' em ' + it.usedIn.map((u) => folderName(u.persona)).join(', ') : ''}">✓</i>`,
     it.similarTo && '<i class="bad" title="parecido com outro arquivo">≈</i>',
     it.clipOf && '<i title="corte">✂</i>',
+    it.frameOf && '<i title="foto tirada de vídeo">📸</i>',
+    it.kit && `<i class="kit" title="kit pro app">${it.kit === 'blur' ? '░' : it.kit === '916' ? '9:16' : '4:5'}</i>`,
   ].filter(Boolean).join('');
   const tags = it.tags?.length ? `<span class="ttags">${it.tags.slice(0, 3).map((t) => `<em>${esc(t)}</em>`).join('')}</span>` : '';
   return `<div class="tile" data-id="${esc(it.id)}">${inner}
@@ -407,6 +409,7 @@ async function loadActivity() {
     a.queued.length && `${a.queued.length} na fila`,
     (a.uploads.length || a.uploadQueue) && `☁ ${a.uploads.length + a.uploadQueue} indo pro Bunny`,
     t.queue && `🏷 ${t.queue} legendando`,
+    a.derive?.current && `${esc(a.derive.current)}${a.derive.queue ? ` (+${a.derive.queue} na fila)` : ''}`,
   ].filter(Boolean).join(' · ');
   $('#actLive').innerHTML = a.active.map((x) => {
     const l = x.live || {};
@@ -425,7 +428,10 @@ async function loadActivity() {
       <div class="small muted">${[u.pct != null && u.pct + '%', u.total && `${fmtBytes(u.bytes)} de ${fmtBytes(u.total)}`, fmtSpeed(u.speed), u.eta != null && `falta ${fmtEta(u.eta)}`].filter(Boolean).join(' · ')}</div>
     </div>`).join('') + (a.uploadQueue ? `<div class="live queued">☁ ${a.uploadQueue} arquivo(s) esperando para subir</div>` : '');
   S.recent = Object.fromEntries(a.recent.map((r) => [r.id, r]));
-  S.anyRunning = !!(a.active.length || a.queued.length || a.uploads.length || a.uploadQueue);
+  S.anyRunning = !!(a.active.length || a.queued.length || a.uploads.length || a.uploadQueue || a.derive?.current);
+  // terminou o kit/fotos: atualiza a biblioteca para os arquivos novos aparecerem
+  if (S.deriveBusy && !a.derive?.current) { toast('📸🧰 Prontos — já estão na biblioteca'); S.libSig = ''; }
+  S.deriveBusy = !!a.derive?.current;
   syncNotifyBtn();
 }
 $('#actLive').onclick = (e) => { const c = e.target.closest('[data-id]'); if (c) openAlbum(c.dataset.id); };
@@ -771,6 +777,8 @@ $('#selBar').onclick = async (e) => {
   try {
     if (act === 'zip') return downloadZip(ids, S.folders.find((f) => f.id === S.folder)?.name);
     if (act === 'bunny') return sendToBunny(ids);
+    if (act === 'frames') return makeFrames(ids);
+    if (act === 'kit') return makeKit(ids);
     if (act === 'links') {
       const urls = ids.map(byId).map((i) => i?.bunny?.url).filter(Boolean);
       if (!urls.length) return toast('Nenhum dos selecionados está no Bunny ainda.', true);
@@ -807,6 +815,51 @@ $('#selBar').onclick = async (e) => {
     if (act === 'delete') { S.selected.clear(); updateSelBar(); }
   } catch (err) { fail(err); }
 };
+
+// ---------- Fotos do vídeo + Kit pro app ----------
+async function makeFrames(ids) {
+  const vids = ids.map((x) => (typeof x === 'string' ? byId(x) : x)).filter((i) => i?.type === 'video' && i.local);
+  if (!vids.length) return toast('Escolha vídeos que estão no servidor.', true);
+  try {
+    const r = await post('/api/items/frames', { ids: vids.map((i) => i.id) });
+    toast(`📸 Procurando ~${r.photos} foto(s) boas em ${r.queued} vídeo(s)… acompanhe na Atividade`);
+    loadStats().catch(() => {});
+  } catch (e) { fail(e); }
+}
+// folha com os formatos (9:16, 4:5, borrada) — lembra a última escolha
+function pickKit(title, hint) {
+  return new Promise((resolve) => {
+    const sh = $('#kitSheet');
+    $('#kitTitle').textContent = title;
+    $('#kitHint').textContent = hint;
+    const saved = JSON.parse(localStorage.getItem('cofre.kit') || 'null');
+    if (saved) $$('#kitSheet input[type=checkbox]').forEach((c) => { c.checked = saved.includes(c.value); });
+    sh.classList.remove('hidden');
+    const done = (v) => { sh.classList.add('hidden'); resolve(v); };
+    $('#kitGo').onclick = () => {
+      const f = $$('#kitSheet input[type=checkbox]').filter((c) => c.checked).map((c) => c.value);
+      if (!f.length) return toast('Marque pelo menos um formato.', true);
+      localStorage.setItem('cofre.kit', JSON.stringify(f));
+      done(f);
+    };
+    $('#kitCancel').onclick = () => done(null);
+    sh.onclick = (e) => { if (e.target === sh) done(null); };
+  });
+}
+async function makeKit(ids, clip) {
+  const list = ids.map((x) => (typeof x === 'string' ? byId(x) : x)).filter((i) => i?.local);
+  if (!list.length) return toast('Escolha arquivos que estão no servidor.', true);
+  const vids = list.filter((i) => i.type === 'video').length;
+  const hint = clip ? `Trecho ${fmtDur(clip.start)}–${fmtDur(clip.end)} do vídeo.`
+    : vids ? `Vídeos: usa 10 s do meio${list.length === 1 ? ' (ou marque Início/Fim no visualizador antes)' : ''}. Fotos: a foto inteira.` : 'Cada foto sai nos formatos marcados.';
+  const formats = await pickKit(`🧰 Kit pro app · ${list.length} arquivo${list.length === 1 ? '' : 's'}`, hint);
+  if (!formats) return;
+  try {
+    const r = await post('/api/items/kit', { ids: list.map((i) => i.id), formats, ...(clip || {}) });
+    toast(`🧰 Gerando ${r.files} arquivo(s)… acompanhe na Atividade`);
+    loadStats().catch(() => {});
+  } catch (e) { fail(e); }
+}
 
 // ---------- Escolher pasta (folha) ----------
 function pickFolder(title, withMode) {
@@ -871,6 +924,9 @@ function renderViewer() {
     $('#vClipBT').textContent = '—';
   }
   syncClipBtn();
+  // tirar fotos (só vídeo) e kit (qualquer arquivo que está no servidor)
+  $('#vMake').classList.toggle('hidden', !it.local);
+  $('#vFrames').classList.toggle('hidden', it.type !== 'video' || !(it.duration >= 3));
   // parecido com outro arquivo
   $('#vSimilar').classList.toggle('hidden', !it.similarTo);
   const b = it.bunny?.status;
@@ -973,6 +1029,13 @@ $('#vClipGo').onclick = async () => {
     toast(`✂ Cortando ${fmtDur(S.clipA)}–${fmtDur(end)}… o trecho aparece na biblioteca em instantes`);
     S.clipA = 0; S.clipB = null; $('#vClipAT').textContent = '0:00'; $('#vClipBT').textContent = '—'; syncClipBtn();
   } catch (e) { fail(e); }
+};
+$('#vFrames').onclick = () => makeFrames([curIt()]);
+// kit do vídeo aberto usa o trecho marcado (Início/Fim), se tiver
+$('#vKit').onclick = () => {
+  const it = curIt();
+  const clip = it.type === 'video' && S.clipB != null && S.clipB > S.clipA + 0.5 ? { start: S.clipA, end: S.clipB } : null;
+  makeKit([it], clip);
 };
 // Parecidos
 $('#vSimSee').onclick = async () => {

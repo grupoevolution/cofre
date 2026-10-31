@@ -912,3 +912,14 @@ body.viewing { overflow: hidden; }
 .vps .app.down .hdot { background: var(--err); box-shadow: 0 0 0 3px rgba(255, 93, 108, .2); }
 .vps .app.down small { color: var(--err); }
 #destSeg button[disabled] { opacity: .45; }
+
+/* ---- Fotos do vídeo + Kit pro app ---- */
+.vmake { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.vmake .btn { min-height: 40px; }
+.kit-opts { display: grid; gap: 4px; margin: 12px 0 6px; }
+.kit-opts .check-line { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--s2); color: var(--text-2); cursor: pointer; }
+.kit-opts .check-line b { color: var(--text); }
+.kit-opts input { width: 18px; height: 18px; accent-color: var(--accent); }
+#kitHint { margin: 0; }
+.tile .tags i.kit { font-size: 10px; font-weight: 700; color: var(--cyan); letter-spacing: .02em; }
+@media (max-width: 480px) { .vmake .btn { flex: 1 1 0; font-size: 12.5px; padding-inline: 8px; } }

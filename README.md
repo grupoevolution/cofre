@@ -22,6 +22,10 @@ PWA + servidor Node para baixar vídeos e fotos de **qualquer site**, organizar 
 - **Pasta = persona (👤):** marque uma pasta como persona; o Cofre avisa se um arquivo já é (ou já foi usado) em outra persona, e guarda "usado em".
 - **Vídeo longo:** prévia de 24 cenas ao passar o mouse/dedo na miniatura e **cortar trecho** no visualizador (Início/Fim → vira um arquivo novo).
 - **Quase-duplicado:** a mesma foto/vídeo em outro tamanho ou recompressão é marcada como "parecida" (filtro "Só os parecidos") para você manter os dois ou apagar.
+- **Fotos tiradas do vídeo (📸):** no visualizador ou na seleção. O Cofre varre o vídeo inteiro e salva os quadros mais nítidos, bem iluminados e diferentes entre si como fotos novas (~3 num vídeo de 30 s, ~24 num de 40 min, máx. 30). Ficam nas mesmas pastas do vídeo; filtro "📸 Fotos tiradas de vídeo".
+- **Kit pro app (🧰):** a mesma mídia em 9:16 (Status), 4:5 (feed/grupo) e borrada (isca de venda). Em vídeo usa o trecho marcado em Início/Fim (ou 10 s do meio, máx. 60 s). Filtro "🧰 Kit pro app". Os dois respeitam o freio do vigia.
+- **Fotos tiradas do vídeo (📸):** no visualizador ou na seleção. O Cofre varre o vídeo inteiro e salva os quadros mais nítidos, bem iluminados e diferentes entre si como fotos novas (~3 num vídeo de 30 s, ~24 num de 40 min, máx. 30). Ficam nas mesmas pastas do vídeo; filtro "📸 Fotos tiradas de vídeo".
+- **Kit pro app (🧰):** a mesma mídia em 9:16 (Status), 4:5 (feed/grupo) e borrada (isca de venda). Em vídeo usa o trecho marcado em Início/Fim (ou 10 s do meio, máx. 60 s). Filtro "🧰 Kit pro app". Os dois respeitam o freio do vigia.
 - **Vigia da VPS:** chip no topo + quadro "Saúde da VPS" (disco, memória, processador e se os apps de venda respondem). Freio automático: disco < 40 GB → só "Direto pro Bunny"; < 20 GB → pausa tudo; memória > 85% → 1 download por vez sem legendas; processador > 90% por 5 min → pausa; app de venda fora do ar ou lento → pausa. Retoma sozinho. "Direto pro Bunny" é o destino padrão.
 
 ## Deploy no EasyPanel

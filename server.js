@@ -19,6 +19,7 @@ import { listAccounts, saveCookies, deleteCookies } from './lib/cookies.js';
 import { proxyMode } from './lib/net.js';
 import { browserEnabled } from './lib/browser.js';
 import { health, startHealth, storeLocalAllowed } from './lib/health.js';
+import { queueDerive, deriveState, framesFor, KIT_FORMATS } from './lib/derive.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const PIN = process.env.APP_PIN || '';
@@ -71,7 +72,7 @@ app.get('/api/stats', (req, res) => {
     if (item.local !== false) bytes += item.size || 0;
     if (item.bunny?.status === 'done') bunnyFiles++;
   }
-  const busy = listAlbums().some((a) => ['queued', 'downloading'].includes(a.status)) || bunnyBusy();
+  const busy = listAlbums().some((a) => ['queued', 'downloading'].includes(a.status)) || bunnyBusy() || !!deriveState.current || deriveState.queue > 0;
   res.json({
     disk, bytes, files, bunnyFiles, busy, bunny: bunnyEnabled(), engines: engineVersions,
     proxy: proxyMode(), browser: browserEnabled(), tags: { ...tagState }, stages, health,
@@ -231,6 +232,9 @@ app.get('/api/items', (req, res) => {
     if (q.fav === '1' && !item.fav) continue;
     if (q.stage && p.stage !== q.stage) continue;
     if (q.similar === '1' && !p.similarTo) continue;
+    if (q.derived === 'kit' && !item.kitOf) continue;
+    if (q.derived === 'frames' && !item.frameOf) continue;
+    if (q.derived === 'orig' && (item.kitOf || item.frameOf || item.clipOf)) continue;
     if (q.tag) {
       const want = String(q.tag).split(',').filter(Boolean);
       if (!want.every((t) => p.tags.includes(t))) continue;
@@ -356,6 +360,35 @@ app.post('/api/items/clip', wrap((req, res) => {
   res.status(202).json(publicItem(album, clip));
 }));
 
+// ---------- Fotos tiradas do vídeo + Kit pronto pro app (em segundo plano) ----------
+const pickLocal = (ids) => [].concat(ids || []).map(findItem).filter((f) => f && VISIBLE(f.item) && f.item.status === 'done' && f.item.local !== false);
+app.post('/api/items/frames', wrap((req, res) => {
+  const vids = pickLocal(req.body?.ids).filter((f) => f.item.type === 'video' && (f.item.duration || 0) >= 3);
+  if (!vids.length) throw new Error('Escolha vídeos que estão no servidor (os que só estão no Bunny precisam ser baixados de novo).');
+  if (!storeLocalAllowed()) throw new Error('Disco da VPS quase cheio: tirar fotos está pausado. ' + (health.brake.reasons[0] || ''));
+  const count = req.body?.count ? Math.max(1, Math.min(60, Number(req.body.count))) : null;
+  let photos = 0;
+  for (const { album, item } of vids) {
+    queueDerive({ kind: 'frames', key: `${album.id}/${item.file}`, count });
+    photos += count || framesFor(item.duration);
+  }
+  res.status(202).json({ queued: vids.length, photos });
+}));
+app.post('/api/items/kit', wrap((req, res) => {
+  const list = pickLocal(req.body?.ids);
+  if (!list.length) throw new Error('Escolha arquivos que estão no servidor (os que só estão no Bunny precisam ser baixados de novo).');
+  if (!storeLocalAllowed()) throw new Error('Disco da VPS quase cheio: kit pausado. ' + (health.brake.reasons[0] || ''));
+  const formats = [].concat(req.body?.formats || Object.keys(KIT_FORMATS)).filter((f) => KIT_FORMATS[f]);
+  if (!formats.length) throw new Error('Escolha pelo menos um formato.');
+  const one = list.length === 1;
+  for (const { album, item } of list) {
+    // o trecho marcado no visualizador só vale quando é 1 vídeo; em lote, cada vídeo usa 10 s do meio
+    queueDerive({ kind: 'kit', key: `${album.id}/${item.file}`, formats, start: one ? req.body?.start ?? null : null, end: one ? req.body?.end ?? null : null });
+  }
+  res.status(202).json({ queued: list.length, files: list.length * formats.length });
+}));
+app.get('/api/kit/formats', (req, res) => res.json(KIT_FORMATS));
+
 // ---------- Atividade (o que está acontecendo agora + histórico) ----------
 app.get('/api/activity', (req, res) => {
   const all = listAlbums();
@@ -368,7 +401,7 @@ app.get('/api/activity', (req, res) => {
     .map((a) => ({ ...summary(a), finishedAt: a.finishedAt, startedAt: a.startedAt, log: (a.log || []).slice(-12) }));
   let uploadQueue = 0;
   for (const { item } of allItems()) if (item.bunny?.status === 'queued') uploadQueue++;
-  res.json({ active, queued, uploads: listUploads(), uploadQueue, recent, tags: { ...tagState } });
+  res.json({ active, queued, uploads: listUploads(), uploadQueue, recent, tags: { ...tagState }, derive: { ...deriveState } });
 });
 
 app.get('/api/bunny/folders', async (req, res) => {

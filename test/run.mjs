@@ -25,6 +25,7 @@ ff('-f', 'lavfi', '-i', 'life=size=320x240:rate=10', '-t', '3', '-pix_fmt', 'yuv
 ff('-f', 'lavfi', '-i', 'testsrc2=size=400x600', '-frames:v', '1', path.join(M, 'i7.jpg'));
 ff('-i', path.join(M, 'i7.jpg'), '-vf', 'scale=300:450,drawbox=x=5:y=5:w=20:h=3:color=white', path.join(M, 'i6.jpg'));
 ff('-f', 'lavfi', '-i', 'smptebars=size=640x360:rate=10', '-t', '30', '-pix_fmt', 'yuv420p', path.join(M, 'v5.mp4'));
+ff('-f', 'lavfi', '-i', 'mandelbrot=size=640x360:rate=10', '-t', '30', '-pix_fmt', 'yuv420p', path.join(M, 'v6.mp4'));
 
 // Proxy local (túnel CONNECT): conta quantas conexões passaram por ele
 let proxyHits = 0;
@@ -316,6 +317,49 @@ try {
   const badCut = await call('/api/items/clip', { method: 'POST', body: { id: v5.id, start: 10, end: 8 } });
   assert.equal(badCut.status, 400);
   pass('corte com fim antes do início é recusado com explicação');
+
+  // fotos tiradas do vídeo
+  const deriveIdle = async () => { for (let i = 0; i < 160; i++) { const st = (await call('/api/activity')).data.derive; if (!st.current && !st.queue) return; await wait(500); } throw new Error('kit/fotos demorou'); };
+  await call('/api/items/frames', { method: 'POST', body: { ids: [v5.id] } });
+  await deriveIdle();
+  assert.equal((await items()).filter((x) => x.frameOf === v5.id).length, 1);
+  pass('vídeo parado (mesma imagem o tempo todo) gera 1 foto, não várias repetidas');
+  await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/media/v6.mp4` } });
+  let v6;
+  for (let i = 0; i < 80 && !v6; i++) { v6 = (await items()).find((x) => x.file.endsWith('v6.mp4') || x.title?.includes('v6')); if (!v6) await wait(400); }
+  assert.ok(v6, 'v6 não baixou');
+  const fr = await call('/api/items/frames', { method: 'POST', body: { ids: [v6.id] } });
+  assert.equal(fr.status, 202, JSON.stringify(fr.data));
+  await deriveIdle();
+  const frames = (await items()).filter((x) => x.frameOf === v6.id);
+  assert.ok(frames.length >= 2, 'poucas fotos: ' + frames.length);
+  assert.ok(frames.every((f) => f.type === 'image' && f.width >= 300 && !f.similarTo), JSON.stringify(frames.map((f) => [f.file, f.width, f.similarTo])));
+  assert.equal(new Set(frames.map((f) => f.file)).size, frames.length);
+  pass(`fotos do vídeo: ${frames.length} fotos nítidas e diferentes entre si (${frames.map((f) => f.frameAt + 's').join(', ')})`);
+
+  // kit pro app: foto e trecho de vídeo
+  const photo = (await items('?type=image&derived=orig')).find((x) => x.local && x.width);
+  const kp = await call('/api/items/kit', { method: 'POST', body: { ids: [photo.id], formats: ['916', '45', 'blur'] } });
+  assert.equal(kp.status, 202, JSON.stringify(kp.data));
+  const kv = await call('/api/items/kit', { method: 'POST', body: { ids: [v5.id], formats: ['916'], start: 2, end: 8 } });
+  assert.equal(kv.status, 202);
+  let kit = [];
+  for (let i = 0; i < 120; i++) {
+    kit = (await items('?derived=kit')).filter((x) => x.kitOf === photo.id || x.kitOf === v5.id);
+    const st = (await call('/api/activity')).data.derive;
+    if (kit.length >= 4 && !st.current && !st.queue) break;
+    await wait(500);
+  }
+  const k = (of, fmt) => kit.find((x) => x.kitOf === of && x.kit === fmt);
+  const ratio = (x) => x.width / x.height;
+  assert.ok(Math.abs(ratio(k(photo.id, '916')) - 9 / 16) < 0.02, '9:16 da foto: ' + JSON.stringify(k(photo.id, '916')));
+  assert.ok(Math.abs(ratio(k(photo.id, '45')) - 4 / 5) < 0.02, '4:5 da foto');
+  assert.ok(k(photo.id, 'blur')?.status === 'done', 'borrada');
+  const v916 = k(v5.id, '916');
+  assert.ok(v916 && Math.abs(ratio(v916) - 9 / 16) < 0.02 && Math.abs(v916.duration - 6) < 0.6, JSON.stringify(v916));
+  pass(`kit pro app: foto em 9:16 (${k(photo.id, '916').width}×${k(photo.id, '916').height}), 4:5 e borrada + trecho de vídeo 9:16 de ${v916.duration}s`);
+  assert.ok((await items('?derived=orig')).every((x) => !x.kitOf && !x.frameOf));
+  pass('filtro "só originais" esconde fotos tiradas e kit');
 
   // atividade
   const actv = (await call('/api/activity')).data;
