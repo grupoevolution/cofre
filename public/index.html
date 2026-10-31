@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cofre</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section id="login" class="screen hidden">
+    <div class="login-box">
+      <div class="logo">▼</div>
+      <h1>Cofre</h1>
+      <p class="muted">Digite seu PIN</p>
+      <form id="loginForm">
+        <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required>
+        <button class="btn primary">Entrar</button>
+      </form>
+      <p id="loginErr" class="err"></p>
+    </div>
+  </section>
+
+  <section id="main" class="screen hidden">
+    <header class="top">
+      <h1>Cofre</h1>
+      <span id="stats" class="muted small"></span>
+    </header>
+
+    <form id="addForm" class="add">
+      <input id="url" type="url" placeholder="Cole o link do álbum (erome.com/a/…)" autocomplete="off">
+      <div class="add-actions">
+        <button type="button" id="pasteBtn" class="btn">Colar</button>
+        <button class="btn primary" id="addBtn">Salvar</button>
+      </div>
+      <p id="addMsg" class="small"></p>
+    </form>
+
+    <div id="list" class="grid"></div>
+    <p id="empty" class="muted center hidden">Nenhum álbum salvo ainda. Cole um link acima.</p>
+  </section>
+
+  <section id="album" class="screen hidden">
+    <header class="top">
+      <button id="backBtn" class="btn ghost">← Voltar</button>
+      <div class="album-actions">
+        <a id="zipBtn" class="btn primary">Baixar tudo (.zip)</a>
+        <button id="moreBtn" class="btn ghost">⋯</button>
+      </div>
+    </header>
+    <div class="album-head">
+      <h2 id="aTitle"></h2>
+      <p id="aMeta" class="muted small"></p>
+      <p id="aErr" class="err small"></p>
+      <div id="aMenu" class="menu hidden">
+        <a id="openOrig" target="_blank" rel="noopener noreferrer" class="btn ghost">Abrir no site</a>
+        <button id="retryBtn" class="btn ghost">Tentar de novo</button>
+        <button id="delBtn" class="btn danger">Apagar álbum</button>
+      </div>
+    </div>
+    <div id="media" class="media"></div>
+  </section>
+
+  <div id="viewer" class="viewer hidden">
+    <button id="vClose" class="vclose">✕</button>
+    <div id="vBody"></div>
+    <a id="vDl" class="btn primary vdl">Baixar</a>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

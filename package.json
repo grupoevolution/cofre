@@ -1,0 +1,9 @@
+{
+  "name": "erome-saver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node test/run.js" },
+  "dependencies": { "archiver": "^7.0.1", "cheerio": "^1.0.0", "express": "^4.21.1" }
+}
