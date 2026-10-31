@@ -18,6 +18,7 @@ import { engineVersions, startEngineUpdater } from './lib/engines.js';
 import { listAccounts, saveCookies, deleteCookies } from './lib/cookies.js';
 import { proxyMode } from './lib/net.js';
 import { browserEnabled } from './lib/browser.js';
+import { health, startHealth, storeLocalAllowed } from './lib/health.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const PIN = process.env.APP_PIN || '';
@@ -73,7 +74,7 @@ app.get('/api/stats', (req, res) => {
   const busy = listAlbums().some((a) => ['queued', 'downloading'].includes(a.status)) || bunnyBusy();
   res.json({
     disk, bytes, files, bunnyFiles, busy, bunny: bunnyEnabled(), engines: engineVersions,
-    proxy: proxyMode(), browser: browserEnabled(), tags: { ...tagState }, stages,
+    proxy: proxyMode(), browser: browserEnabled(), tags: { ...tagState }, stages, health,
   });
 });
 
@@ -150,6 +151,10 @@ app.post('/api/sources', wrap((req, res) => {
   const bunnyFolder = String(req.body?.bunnyFolder || '').trim();
   if (bunnyFolder && !bunnyEnabled()) throw new Error('Bunny não configurado no servidor.');
   const autoBunny = bunnyFolder ? { dir: bunnyFolder, free: req.body?.keepLocal !== true } : null;
+  // disco da VPS apertado (é o mesmo dos apps de venda): só aceita o que vai pro Bunny e sai do servidor
+  if (!storeLocalAllowed() && (!autoBunny || !autoBunny.free)) {
+    return res.status(409).json({ error: 'Disco da VPS quase cheio: use "Direto pro Bunny" (sem manter cópia). ' + (health.brake.reasons[0] || '') });
+  }
   const results = urls.slice(0, 200).map((u) => {
     const r = addSource(u, folderIds);
     if (autoBunny && !r.invalid) {
@@ -328,6 +333,7 @@ app.post('/api/items/clip', wrap((req, res) => {
   const end = Math.min(Number(req.body?.end) || 0, f.item.duration || Infinity);
   if (!(end > start + 0.5)) throw new Error('O fim do corte precisa ser depois do início.');
   if (end - start > 15 * 60) throw new Error('Corte de no máximo 15 minutos.');
+  if (!storeLocalAllowed()) throw new Error('Disco da VPS quase cheio: corte pausado. ' + (health.brake.reasons[0] || ''));
   const { album, item } = f;
   const base = item.file.replace(/\.[^.]+$/, '');
   const file = `${base}-corte-${Math.round(start)}-${Math.round(end)}.mp4`;
@@ -459,6 +465,7 @@ app.listen(PORT, () => {
   resumePending();
   resumeUploads(allItems);
   startEngineUpdater();
+  startHealth();
   backfillOld().catch((e) => console.error('[backfill]', e));
 });
 

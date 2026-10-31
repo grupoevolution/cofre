@@ -70,19 +70,52 @@ $('#pin').oninput = () => $('#pin').classList.remove('bad');
 // ---------- Painel (disco + atividade) ----------
 async function loadStats() {
   const s = S.stats = await api('/api/stats');
-  const chip = $('#disk');
-  if (s.disk) {
-    const low = s.disk.free < 5e9 || s.disk.free / s.disk.total < 0.1;
-    chip.textContent = `${fmtBytes(s.disk.free)} livres · ${s.files} arquivos`;
-    chip.title = `Biblioteca: ${fmtBytes(s.bytes)} no servidor · ${s.bunnyFiles} no Bunny\nyt-dlp ${s.engines['yt-dlp'] || '—'} · gallery-dl ${s.engines['gallery-dl'] || '—'}`;
-    chip.classList.toggle('warn', low);
-    if (low && !S.warned) { S.warned = true; toast('Disco quase cheio — use "Liberar espaço" no que já está no Bunny.', true); }
-  }
+  renderHealth(s);
   const busy = s.busy;
   $('#busyBadge').classList.toggle('hidden', !busy);
   $('#busyBadge').textContent = 'ao vivo';
   renderStages();
   return s;
+}
+
+// ---------- Saúde da VPS (o Cofre divide a máquina com os apps de venda) ----------
+function renderHealth(s) {
+  const h = s.health;
+  const chip = $('#disk');
+  if (!h) { chip.textContent = s.disk ? `${fmtBytes(s.disk.free)} livres` : ''; return; }
+  const b = h.brake;
+  const app = h.apps?.[0];
+  chip.className = 'chip health h-' + b.level;
+  chip.innerHTML = `${b.level === 'ok' ? 'VPS ok' : b.level === 'warn' ? 'VPS apertada' : 'Cofre pausado'}`
+    + (h.disk ? ` · ${fmtBytes(h.disk.free)} livres` : '')
+    + (app?.ms != null ? ` · app ${app.ms} ms` : app && app.ok === false ? ' · app sem resposta' : '');
+  chip.title = b.reasons.join('\n') || 'Toque para ver a saúde da VPS';
+  if (b.level !== 'ok' && S.lastBrake !== b.reasons.join()) toast('⏸ ' + b.reasons[0], true);
+  S.lastBrake = b.reasons.join();
+  // "Guardar no Cofre" fica bloqueado quando o disco da VPS aperta
+  const local = $('#destSeg [data-dest="cofre"]');
+  local.disabled = !b.storeLocal;
+  if (!b.storeLocal && S.dest === 'cofre' && s.bunny) $('#destSeg [data-dest="bunny"]').click();
+  if (S.tab === 'dl') renderVps(h, s);
+}
+$('#disk').onclick = () => { if (S.currentId) history.back(); setTab('dl'); };
+
+function renderVps(h, s) {
+  const bar = (pct, warnAt, stopAt) => `<div class="bar vbar-h ${pct >= stopAt ? 'b-stop' : pct >= warnAt ? 'b-warn' : 'b-ok'}"><i style="width:${Math.min(100, pct)}%"></i></div>`;
+  const rows = [];
+  if (h.disk) {
+    const used = Math.round((1 - h.disk.free / h.disk.total) * 100);
+    const freeGB = h.disk.free / 1024 ** 3;
+    rows.push(`<div class="vrow"><span>Disco</span><b>${fmtBytes(h.disk.free)} livres de ${fmtBytes(h.disk.total)}</b>${bar(used, 100 - 100 * h.limits.diskLocalGB * 1024 ** 3 / h.disk.total, 100 - 100 * h.limits.diskStopGB * 1024 ** 3 / h.disk.total)}<small>${freeGB < h.limits.diskLocalGB ? 'só "Direto pro Bunny"' : `freia abaixo de ${h.limits.diskLocalGB} GB`} · Cofre guarda ${fmtBytes(s.bytes)}</small></div>`);
+  }
+  if (h.mem) rows.push(`<div class="vrow"><span>Memória</span><b>${h.mem.pct}% em uso · ${fmtBytes(h.mem.total)}</b>${bar(h.mem.pct, h.limits.memPct - 10, h.limits.memPct)}<small>o Cofre usa ${fmtBytes(h.mem.cofre)} · freia em ${h.limits.memPct}%</small></div>`);
+  if (h.cpu) rows.push(`<div class="vrow"><span>Processador</span><b>${h.cpu.pct ?? '—'}% · ${h.cpu.cores} núcleos</b>${bar(h.cpu.pct || 0, h.limits.cpuPct - 20, h.limits.cpuPct)}<small>carga ${h.cpu.load} · freia em ${h.limits.cpuPct}% por ${h.limits.cpuMin} min</small></div>`);
+  const apps = (h.apps || []).map((a) => `<div class="app ${a.ok === false ? 'down' : a.ok ? 'up' : ''}"><b class="hdot"></b> ${esc(a.name)} <small>${a.ok == null ? 'checando…' : a.ok ? `${a.ms} ms` : esc(a.ms ? `lento: ${(a.ms / 1000).toFixed(1)} s` : a.status)}</small></div>`).join('');
+  $('#vpsCard').className = 'panel vps h-' + h.brake.level;
+  $('#vpsCard').innerHTML = `<div class="vps-head"><h3>Saúde da VPS</h3><span class="small muted">atualiza sozinho · ${h.at ? hhmm(h.at) : ''}</span></div>
+    ${h.brake.reasons.length ? `<div class="brake">⏸ ${h.brake.reasons.map(esc).join('<br>⏸ ')}<br><small>Retoma sozinho quando normalizar.</small></div>` : '<div class="brake ok">✔ Tudo normal — o Cofre trabalha sem atrapalhar os apps.</div>'}
+    <div class="vrows">${rows.join('')}</div>
+    ${apps ? `<div class="apps"><span class="small muted">Apps de venda (checados a cada minuto):</span>${apps}</div>` : ''}`;
 }
 
 // Etapas do arsenal: bruto → separado → no Bunny → usado
@@ -433,6 +466,7 @@ async function addUrls(text) {
     if (S.dest === 'bunny') {
       if (!S.stats.bunny) throw new Error('Bunny não configurado no servidor (BUNNY_STORAGE_ZONE / KEY / CDN_URL).');
       body.bunnyFolder = $('#bunnyDir').value.trim() || 'geral';
+      localStorage.setItem('cofre.bunnyDir', body.bunnyFolder); // lembra a última pasta
       body.keepLocal = $('#keepLocal').checked;
     }
     const r = await post('/api/sources', body);
@@ -469,7 +503,7 @@ function syncDest() {
   b.innerHTML = S.stats.bunny ? '☁ Direto pro Bunny' : '☁ Bunny <small>não configurado</small>';
 }
 // Celular: o campo de colar fica numa linha só; abre as opções ao tocar ou quando tem link
-const syncAddOpen = () => $('#addForm').classList.toggle('open', document.activeElement?.closest?.('#addForm') != null || !!urlBox.value.trim() || S.dest === 'bunny');
+const syncAddOpen = () => $('#addForm').classList.toggle('open', document.activeElement?.closest?.('#addForm') != null || !!urlBox.value.trim());
 $('#addForm').addEventListener('focusin', syncAddOpen);
 $('#addForm').addEventListener('focusout', () => setTimeout(syncAddOpen, 150));
 urlBox.addEventListener('input', syncAddOpen);
@@ -965,7 +999,7 @@ $('#vSimDel').onclick = async () => {
 // ---------- Atualização automática enquanto algo baixa/envia ----------
 async function refreshView() {
   if (S.currentId) return loadAlbum(S.currentId);
-  if (S.tab === 'dl') return Promise.all([loadActivity(), loadSources()]);
+  if (S.tab === 'dl') { if (S.stats.health) renderVps(S.stats.health, S.stats); return Promise.all([loadActivity(), loadSources()]); }
   if (S.tab === 'acc') return loadAccounts();
   return refreshLib();
 }
@@ -994,6 +1028,9 @@ async function start() {
   await loadStats().catch(() => {});
   syncNotifyBtn();
   syncDest();
+  // padrão = Direto pro Bunny: o arsenal cresce no Bunny, não no disco que os apps de venda usam
+  $('#bunnyDir').value = localStorage.getItem('cofre.bunnyDir') || '';
+  if (S.stats.bunny && S.dest !== 'bunny') $('#destSeg [data-dest="bunny"]').click();
   syncAddOpen();
   const shared = new URLSearchParams(location.search).get('add');
   if (location.hash.startsWith('#a/')) return openAlbum(location.hash.slice(3));

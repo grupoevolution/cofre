@@ -877,3 +877,38 @@ body.viewing { overflow: hidden; }
   .bar.indet i { animation: none; width: 100% !important; opacity: .45; }
   .login-box.shake { animation: none; }
 }
+
+/* ---- Saúde da VPS (chip do topo + quadro na Atividade) ---- */
+#disk.health { cursor: pointer; }
+#disk.h-warn { color: var(--warn); border-color: rgba(255, 181, 71, .35); }
+#disk.h-warn::before { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 181, 71, .18); }
+#disk.h-stop { color: var(--err); border-color: rgba(255, 93, 108, .4); }
+#disk.h-stop::before { background: var(--err); box-shadow: 0 0 0 3px rgba(255, 93, 108, .2); }
+.vps { position: relative; overflow: hidden; }
+.vps::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ok); }
+.vps.h-warn::before { background: var(--warn); } .vps.h-stop::before { background: var(--err); }
+.vps-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.vps-head h3 { margin: 0; font-family: var(--f-display); }
+.vps .brake { font-size: 13px; line-height: 1.5; padding: 9px 12px; border-radius: var(--r-sm); margin-bottom: 12px; background: rgba(255, 93, 108, .08); border: 1px solid rgba(255, 93, 108, .25); color: #ffc2c8; }
+.vps.h-warn .brake { background: rgba(255, 181, 71, .08); border-color: rgba(255, 181, 71, .25); color: #ffdca6; }
+.vps .brake.ok { background: rgba(61, 220, 151, .07); border-color: rgba(61, 220, 151, .2); color: #aef0d2; }
+.vps .brake small { color: var(--muted); }
+.vrows { display: grid; gap: 12px; }
+@media (min-width: 760px) { .vrows { grid-template-columns: repeat(3, 1fr); gap: 18px; } }
+.vrow { display: grid; gap: 4px; }
+.vrow > span { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.vrow > b { font-family: var(--f-body); font-size: 15px; font-weight: 600; font-variant-numeric: normal; }
+.vrow small { color: var(--muted); font-size: 12px; }
+.vrow .bar { height: 6px; margin: 2px 0; }
+.vrow .bar.b-ok i { background: var(--ok); }
+.vrow .bar.b-warn i { background: var(--warn); }
+.vrow .bar.b-stop i { background: var(--err); }
+.vps .apps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.vps .apps > span { flex-basis: 100%; }
+.vps .app { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600; }
+.vps .app small { color: var(--muted); font-weight: 500; }
+.vps .app .hdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.vps .app.up .hdot { background: var(--ok); box-shadow: 0 0 0 3px rgba(61, 220, 151, .15); }
+.vps .app.down .hdot { background: var(--err); box-shadow: 0 0 0 3px rgba(255, 93, 108, .2); }
+.vps .app.down small { color: var(--err); }
+#destSeg button[disabled] { opacity: .45; }

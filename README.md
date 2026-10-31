@@ -22,6 +22,7 @@ PWA + servidor Node para baixar vídeos e fotos de **qualquer site**, organizar 
 - **Pasta = persona (👤):** marque uma pasta como persona; o Cofre avisa se um arquivo já é (ou já foi usado) em outra persona, e guarda "usado em".
 - **Vídeo longo:** prévia de 24 cenas ao passar o mouse/dedo na miniatura e **cortar trecho** no visualizador (Início/Fim → vira um arquivo novo).
 - **Quase-duplicado:** a mesma foto/vídeo em outro tamanho ou recompressão é marcada como "parecida" (filtro "Só os parecidos") para você manter os dois ou apagar.
+- **Vigia da VPS:** chip no topo + quadro "Saúde da VPS" (disco, memória, processador e se os apps de venda respondem). Freio automático: disco < 40 GB → só "Direto pro Bunny"; < 20 GB → pausa tudo; memória > 85% → 1 download por vez sem legendas; processador > 90% por 5 min → pausa; app de venda fora do ar ou lento → pausa. Retoma sozinho. "Direto pro Bunny" é o destino padrão.
 
 ## Deploy no EasyPanel
 1. App com fonte GitHub e build por **Dockerfile**.

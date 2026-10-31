@@ -68,7 +68,7 @@ const startServer = (env) => spawn(process.execPath, ['--import', './test/mock-f
     YTDLP_BIN: `${process.execPath}|${path.resolve('test/fake-ytdlp.mjs')}`, GALLERYDL_BIN: 'gallery-dl-nao-existe',
     AUTO_UPDATE_ENGINES: '0', AUTO_TAGS: '0', PROXY_URL: `http://127.0.0.1:${proxy.address().port}`,
     BROWSER_BIN: process.env.BROWSER_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: 'k3y', BUNNY_CDN_URL: 'https://cdn.teste', ...env,
+    BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: 'k3y', BUNNY_CDN_URL: 'https://cdn.teste', HEALTH_URLS: '', HEALTH_MEM_PCT: '101', HEALTH_CPU_PCT: '101', ...env,
   },
   stdio: ['ignore', 'inherit', 'inherit'],
 });
@@ -323,6 +323,49 @@ try {
   assert.ok(rec && rec.log.some((l) => /Terminou/.test(l.msg)), JSON.stringify(rec?.log));
   assert.ok(Array.isArray(actv.uploads) && 'uploadQueue' in actv);
   pass('atividade: histórico com diário de cada download');
+
+  // ---------- Vigia da VPS: freio automático ----------
+  let appOk = true;
+  const appSrv = http.createServer((q, r) => { r.writeHead(appOk ? 200 : 503, { 'Content-Type': 'application/json' }); r.end('{"status":"ok"}'); }).listen(0);
+  const APPURL = `http://127.0.0.1:${appSrv.address().port}/health`;
+  srv.kill();
+  await wait(500);
+  srv = startServer({
+    APP_PIN: '4321', HEALTH_URLS: `App teste=${APPURL}`, HEALTH_APP_SEC: '1', HEALTH_SAMPLE_SEC: '1',
+    HEALTH_DISK_LOCAL_GB: '100000', // força "disco apertado" para testar o bloqueio de guardar no servidor
+  });
+  await up();
+  try {
+    const lg2 = await fetch(B + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"pin":"4321"}' });
+    cookie = lg2.headers.get('set-cookie').split(';')[0];
+    await wait(1500);
+    let st = (await call('/api/stats')).data;
+    assert.ok(st.health?.disk?.total > 0 && st.health.mem?.total > 0 && st.health.cpu?.cores > 0, JSON.stringify(st.health));
+    assert.ok(st.health.apps[0].ok && st.health.apps[0].ms != null, JSON.stringify(st.health.apps));
+    pass(`vigia: disco/memória/processador medidos e app respondendo em ${st.health.apps[0].ms} ms`);
+
+    const local = await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/media/vigia1/i6.jpg` } });
+    assert.equal(local.status, 409, JSON.stringify(local.data));
+    assert.match(local.data.error, /Direto pro Bunny/);
+    pass('disco apertado: recusa guardar no servidor e manda usar "Direto pro Bunny"');
+
+    appOk = false;
+    for (let i = 0; i < 30 && st.health.brake.level !== 'stop'; i++) { await wait(300); st = (await call('/api/stats')).data; }
+    assert.equal(st.health.brake.level, 'stop', JSON.stringify(st.health.brake));
+    assert.match(st.health.brake.reasons.join(), /App teste/);
+    const viaBunny = await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/media/vigia2/i6.jpg`, bunnyFolder: 'vigia' } });
+    assert.equal(viaBunny.status, 201);
+    const vid = viaBunny.data.results[0].id;
+    await wait(2000);
+    assert.equal((await call('/api/sources/' + vid)).data.status, 'queued');
+    pass('app de venda fora do ar: Cofre pausa a fila sozinho ("' + st.health.brake.reasons[0] + '")');
+
+    appOk = true;
+    let a2;
+    for (let i = 0; i < 60; i++) { a2 = (await call('/api/sources/' + vid)).data; if (['done', 'partial', 'error'].includes(a2.status)) break; await wait(300); }
+    assert.equal(a2.status, 'done', JSON.stringify(a2));
+    pass('app voltou: freio solta e a fila retoma sozinha');
+  } finally { appSrv.close(); }
 
   console.log(`\n${ok} testes passaram`);
 } finally {
