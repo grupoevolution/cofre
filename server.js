@@ -7,10 +7,13 @@ import { albumIdFromUrl, extractUrl, extractUrls, eromeProfileFromUrl } from './
 import {
   DATA_DIR, ALBUMS_DIR, albumDir, readAlbum, writeAlbum, listAlbums, deleteAlbum, summary,
   allItems, findItem, publicItem, VISIBLE, unindexItem,
-  listFolders, getFolder, createFolder, renameFolder, deleteFolder,
+  listFolders, getFolder, createFolder, updateFolder, deleteFolder, personaIds, stageOf,
 } from './lib/store.js';
-import { enqueue, resumePending, isActive } from './lib/downloader.js';
-import { bunnyEnabled, queueUpload, resumeUploads, bunnyBusy } from './lib/bunny.js';
+import { enqueue, resumePending, isActive, finalize, markSimilar } from './lib/downloader.js';
+import { bunnyEnabled, queueUpload, resumeUploads, bunnyBusy, listBunnyFolders } from './lib/bunny.js';
+import { getLive, listUploads, logEvent } from './lib/activity.js';
+import { cutClip, makeSprite } from './lib/media.js';
+import { TAG_GROUPS, effectiveTags, tagState, backfillTags } from './lib/tags.js';
 import { engineVersions, startEngineUpdater } from './lib/engines.js';
 import { listAccounts, saveCookies, deleteCookies } from './lib/cookies.js';
 import { proxyMode } from './lib/net.js';
@@ -59,16 +62,18 @@ app.get('/api/stats', (req, res) => {
     disk = { free: s.bavail * s.bsize, total: s.blocks * s.bsize };
   } catch { /* sistema sem statfs */ }
   let bytes = 0, files = 0, bunnyFiles = 0;
+  const stages = { bruto: 0, selecionado: 0, bunny: 0, usado: 0 };
   for (const { item } of allItems()) {
     if (item.status !== 'done') continue;
     files++;
+    stages[stageOf(item)]++;
     if (item.local !== false) bytes += item.size || 0;
     if (item.bunny?.status === 'done') bunnyFiles++;
   }
   const busy = listAlbums().some((a) => ['queued', 'downloading'].includes(a.status)) || bunnyBusy();
   res.json({
     disk, bytes, files, bunnyFiles, busy, bunny: bunnyEnabled(), engines: engineVersions,
-    proxy: proxyMode(), browser: browserEnabled(),
+    proxy: proxyMode(), browser: browserEnabled(), tags: { ...tagState }, stages,
   });
 });
 
@@ -141,7 +146,18 @@ app.post('/api/sources', wrap((req, res) => {
   const urls = extractUrls(raw);
   if (!urls.length) return res.status(400).json({ error: 'Nenhum link encontrado. Cole um ou mais links (um por linha).' });
   const folderIds = [].concat(req.body?.folderId || []).filter((id) => getFolder(id));
-  const results = urls.slice(0, 200).map((u) => addSource(u, folderIds));
+  // "Direto pro Bunny": baixa, envia pra essa pasta do Bunny e (por padrão) apaga do servidor
+  const bunnyFolder = String(req.body?.bunnyFolder || '').trim();
+  if (bunnyFolder && !bunnyEnabled()) throw new Error('Bunny não configurado no servidor.');
+  const autoBunny = bunnyFolder ? { dir: bunnyFolder, free: req.body?.keepLocal !== true } : null;
+  const results = urls.slice(0, 200).map((u) => {
+    const r = addSource(u, folderIds);
+    if (autoBunny && !r.invalid) {
+      const a = readAlbum(r.id);
+      if (a) { a.autoBunny = autoBunny; writeAlbum(a); }
+    }
+    return r;
+  });
   res.status(201).json({
     added: results.filter((r) => !r.invalid && !r.existed).length,
     existed: results.filter((r) => r.existed).length,
@@ -207,8 +223,15 @@ app.get('/api/items', (req, res) => {
     if (q.used === '0' && item.used) continue;
     if (q.bunny === '1' && item.bunny?.status !== 'done') continue;
     if (q.bunny === '0' && item.bunny?.status === 'done') continue;
+    if (q.fav === '1' && !item.fav) continue;
+    if (q.stage && p.stage !== q.stage) continue;
+    if (q.similar === '1' && !p.similarTo) continue;
+    if (q.tag) {
+      const want = String(q.tag).split(',').filter(Boolean);
+      if (!want.every((t) => p.tags.includes(t))) continue;
+    }
     if (term) {
-      const hay = [album.title, album.author, album.site, album.url, item.title, item.file,
+      const hay = [album.title, album.author, album.site, album.url, item.title, item.file, ...p.tags,
         ...(item.folders || []).map((f) => folderNames[f])].join(' ').toLowerCase();
       if (!hay.includes(term)) continue;
     }
@@ -228,17 +251,42 @@ app.post('/api/items/action', wrap((req, res) => {
   const touched = new Set();
   let n = 0;
   if (action === 'bunny') {
-    n = queueUpload(found.map(({ album, item }) => `${album.id}/${item.file}`), bunnyFolder);
+    n = queueUpload(found.map(({ album, item }) => `${album.id}/${item.file}`), bunnyFolder, { autoFree: req.body?.autoFree === true });
     return res.json({ ok: true, count: n });
   }
+  // Persona: avisa se algum arquivo já pertence (ou já foi usado) em OUTRA persona
+  const personas = personaIds();
+  const conflicts = [];
+  if (['addFolder', 'move'].includes(action) && personas.has(folderId)) {
+    for (const { album, item } of found) {
+      const others = [...new Set([...(item.folders || []), ...(item.usedIn || []).map((u) => u.persona)])]
+        .filter((f) => f !== folderId && personas.has(f));
+      if (others.length) conflicts.push({ id: `${album.id}/${item.file}`, personas: others.map((f) => getFolder(f)?.name).filter(Boolean) });
+    }
+  }
+  const tags = Array.isArray(req.body?.tags) ? [...new Set(req.body.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 30) : null;
   for (const { album, item } of found) {
     const dir = albumDir(album.id);
     switch (action) {
       case 'addFolder': item.folders = [...new Set([...(item.folders || []), folderId])]; break;
       case 'move': item.folders = [folderId]; break;
       case 'removeFolder': item.folders = (item.folders || []).filter((f) => f !== folderId); break;
-      case 'used': item.used = true; break;
-      case 'unused': item.used = false; break;
+      case 'used': {
+        item.used = true;
+        // registra em qual persona foi usado (a pasta aberta, ou as personas onde o arquivo está)
+        const where = folderId && personas.has(folderId) ? [folderId] : (item.folders || []).filter((f) => personas.has(f));
+        item.usedIn = [...(item.usedIn || []).filter((u) => !where.includes(u.persona)), ...where.map((p) => ({ persona: p, at: new Date().toISOString() }))];
+        break;
+      }
+      case 'unused': item.used = false; item.usedIn = []; break;
+      case 'fav': item.fav = true; break;
+      case 'unfav': item.fav = false; break;
+      case 'approve': item.approved = true; break;
+      case 'unapprove': item.approved = false; break;
+      case 'setTags': if (!tags) throw new Error('Envie a lista de legendas.'); item.tags = tags; item.tagsEdited = true; break;
+      case 'addTags': if (!tags) throw new Error('Envie a lista de legendas.'); item.tags = [...new Set([...effectiveTags(item), ...tags])]; item.tagsEdited = true; break;
+      case 'resetTags': item.tags = []; item.tagsEdited = false; break;
+      case 'ignoreSimilar': item.similarIgnored = true; break;
       case 'freeLocal':
         if (item.bunny?.status !== 'done' || item.local === false) continue;
         fs.rmSync(path.join(dir, item.file), { force: true });
@@ -257,8 +305,69 @@ app.post('/api/items/action', wrap((req, res) => {
     touched.add(album);
   }
   for (const a of touched) writeAlbum(a);
-  res.json({ ok: true, count: n });
+  res.json({ ok: true, count: n, conflicts });
 }));
+
+// Legendas existentes (para os filtros), com quantidade
+app.get('/api/tags', (req, res) => {
+  const count = {};
+  for (const { album, item } of allItems()) {
+    if (!VISIBLE(item) || item.status !== 'done') continue;
+    for (const t of effectiveTags(item)) count[t] = (count[t] || 0) + 1;
+  }
+  const groupOf = Object.fromEntries(TAG_GROUPS.flatMap((g) => Object.keys(g.labels).map((t) => [t, g.group])));
+  res.json(Object.entries(count).map(([tag, n]) => ({ tag, n, group: groupOf[tag] || 'minhas' })).sort((a, b) => b.n - a.n));
+});
+
+// Cortar trecho de um vídeo (vira um arquivo novo, nas mesmas pastas do original)
+app.post('/api/items/clip', wrap((req, res) => {
+  const f = findItem(req.body?.id);
+  if (!f || f.item.type !== 'video' || f.item.status !== 'done') throw new Error('Escolha um vídeo da biblioteca.');
+  if (f.item.local === false) throw new Error('Esse vídeo só está no Bunny. Baixe de novo para cortar.');
+  const start = Math.max(0, Number(req.body?.start) || 0);
+  const end = Math.min(Number(req.body?.end) || 0, f.item.duration || Infinity);
+  if (!(end > start + 0.5)) throw new Error('O fim do corte precisa ser depois do início.');
+  if (end - start > 15 * 60) throw new Error('Corte de no máximo 15 minutos.');
+  const { album, item } = f;
+  const base = item.file.replace(/\.[^.]+$/, '');
+  const file = `${base}-corte-${Math.round(start)}-${Math.round(end)}.mp4`;
+  if (album.items.some((i) => i.file === file && VISIBLE(i))) throw new Error('Esse corte já existe.');
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const clip = {
+    file, type: 'video', status: 'processing', clipOf: `${album.id}/${item.file}`,
+    title: `Corte ${mmss(start)}–${mmss(end)} de ${item.title || album.title || item.file}`,
+    folders: [...(item.folders || [])],
+  };
+  album.items = album.items.filter((i) => i.file !== file);
+  album.items.push(clip);
+  writeAlbum(album);
+  logEvent(album, `✂ Cortando ${mmss(start)}–${mmss(end)} de ${item.file}`);
+  cutClip(path.join(albumDir(album.id), item.file), path.join(albumDir(album.id), file), start, end)
+    .then(() => finalize(album, clip))
+    .then(() => { if (clip.similarTo === clip.clipOf) clip.similarTo = null; }) // corte do próprio vídeo não é "repetido"
+    .catch((e) => { clip.status = 'error'; clip.error = String(e.message || e); })
+    .finally(() => writeAlbum(album));
+  res.status(202).json(publicItem(album, clip));
+}));
+
+// ---------- Atividade (o que está acontecendo agora + histórico) ----------
+app.get('/api/activity', (req, res) => {
+  const all = listAlbums();
+  const active = all.filter((a) => a.status === 'downloading').map((a) => ({
+    ...summary(a), live: getLive(a.id), log: (a.log || []).slice(-8),
+  }));
+  const queued = all.filter((a) => a.status === 'queued').map(summary);
+  const recent = all.filter((a) => a.finishedAt && !['downloading', 'queued'].includes(a.status))
+    .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt)).slice(0, 25)
+    .map((a) => ({ ...summary(a), finishedAt: a.finishedAt, startedAt: a.startedAt, log: (a.log || []).slice(-12) }));
+  let uploadQueue = 0;
+  for (const { item } of allItems()) if (item.bunny?.status === 'queued') uploadQueue++;
+  res.json({ active, queued, uploads: listUploads(), uploadQueue, recent, tags: { ...tagState } });
+});
+
+app.get('/api/bunny/folders', async (req, res) => {
+  try { res.json(await listBunnyFolders()); } catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
 
 // ---------- Pastas ----------
 function folderCounts() {
@@ -275,9 +384,9 @@ app.get('/api/folders', (req, res) => {
   const { c, none } = folderCounts();
   res.json({ folders: listFolders().map((f) => ({ ...f, count: c[f.id] || 0 })), none });
 });
-app.post('/api/folders', wrap((req, res) => res.status(201).json(createFolder(req.body?.name))));
+app.post('/api/folders', wrap((req, res) => res.status(201).json(createFolder(req.body?.name, { persona: req.body?.persona, appName: req.body?.appName }))));
 app.patch('/api/folders/:id', wrap((req, res) => {
-  const f = renameFolder(req.params.id, req.body?.name);
+  const f = updateFolder(req.params.id, req.body || {});
   if (!f) return res.status(404).json({ error: 'não encontrada' });
   res.json(f);
 }));
@@ -350,4 +459,22 @@ app.listen(PORT, () => {
   resumePending();
   resumeUploads(allItems);
   startEngineUpdater();
+  backfillOld().catch((e) => console.error('[backfill]', e));
 });
+
+// Arquivos baixados antes desta versão: ganham impressão visual, prévia e legendas aos poucos.
+async function backfillOld() {
+  for (const { album, item } of [...allItems()]) {
+    if (item.status !== 'done' || item.local === false) continue;
+    const file = path.join(albumDir(album.id), item.file);
+    if (!fs.existsSync(file)) continue;
+    let changed = false;
+    if (!item.phash) { await markSimilar(album, item, file); changed = true; }
+    if (item.type === 'video' && !item.sprite && item.duration >= 20) {
+      const sprite = item.file.replace(/\.[^.]+$/, '.sprite.jpg');
+      if (await makeSprite(file, path.join(albumDir(album.id), sprite), item.duration)) { item.sprite = sprite; changed = true; }
+    }
+    if (changed) writeAlbum(album);
+  }
+  backfillTags();
+}

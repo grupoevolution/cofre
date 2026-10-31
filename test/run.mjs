@@ -21,6 +21,10 @@ ff('-f', 'lavfi', '-i', 'color=yellow:size=200x200', '-frames:v', '1', path.join
 ff('-f', 'lavfi', '-i', 'color=purple:size=500x800', '-frames:v', '1', path.join(M, 'i5.jpg'));
 ff('-f', 'lavfi', '-i', 'mandelbrot=size=320x240:rate=10', '-t', '3', '-pix_fmt', 'yuv420p', path.join(M, 'v3.mp4'));
 ff('-f', 'lavfi', '-i', 'life=size=320x240:rate=10', '-t', '3', '-pix_fmt', 'yuv420p', path.join(M, 'v4.mp4'));
+// i6 = mesma foto da i2 (azul) com outro tamanho e um risco → arquivo diferente, imagem "parecida"
+ff('-f', 'lavfi', '-i', 'testsrc2=size=400x600', '-frames:v', '1', path.join(M, 'i7.jpg'));
+ff('-i', path.join(M, 'i7.jpg'), '-vf', 'scale=300:450,drawbox=x=5:y=5:w=20:h=3:color=white', path.join(M, 'i6.jpg'));
+ff('-f', 'lavfi', '-i', 'smptebars=size=640x360:rate=10', '-t', '30', '-pix_fmt', 'yuv420p', path.join(M, 'v5.mp4'));
 
 // Proxy local (túnel CONNECT): conta quantas conexões passaram por ele
 let proxyHits = 0;
@@ -62,7 +66,7 @@ const startServer = (env) => spawn(process.execPath, ['--import', './test/mock-f
   env: {
     ...process.env, PORT: String(PORT), DATA_DIR: path.join(root, 'data'), TEST_MEDIA: M,
     YTDLP_BIN: `${process.execPath}|${path.resolve('test/fake-ytdlp.mjs')}`, GALLERYDL_BIN: 'gallery-dl-nao-existe',
-    AUTO_UPDATE_ENGINES: '0', PROXY_URL: `http://127.0.0.1:${proxy.address().port}`,
+    AUTO_UPDATE_ENGINES: '0', AUTO_TAGS: '0', PROXY_URL: `http://127.0.0.1:${proxy.address().port}`,
     BROWSER_BIN: process.env.BROWSER_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
     BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: 'k3y', BUNNY_CDN_URL: 'https://cdn.teste', ...env,
   },
@@ -251,6 +255,74 @@ try {
   assert.equal(st.proxy, 'fallback');
   assert.equal(st.browser, true);
   pass('painel Sistema: proxy "só quando bloquear" + navegador ligado');
+
+  // 10) organização: favorito, etapas, legendas, persona, parecido, prévia, corte, direto pro Bunny, atividade
+  const fresh = (await items()).filter((i) => i.type === 'image');
+  const [a1, a2] = fresh;
+  await act({ ids: [a1.id], action: 'fav' });
+  assert.deepEqual((await items('?fav=1')).map((i) => i.id), [a1.id]);
+  pass('favoritos ⭐ + filtro');
+  await act({ ids: [a2.id], action: 'approve' });
+  assert.ok((await items('?stage=selecionado')).some((i) => i.id === a2.id));
+  const stg = (await call('/api/stats')).data.stages;
+  assert.ok(stg.bruto > 0 && stg.selecionado >= 1 && stg.usado >= 1, JSON.stringify(stg));
+  pass(`etapas: ${JSON.stringify(stg)}`);
+  await act({ ids: [a1.id, a2.id], action: 'setTags', tags: ['Loira', 'quarto'] });
+  assert.equal((await items('?tag=loira,quarto')).length, 2);
+  assert.equal((await items('?q=quarto')).length, 2);
+  assert.ok((await call('/api/tags')).data.some((t) => t.tag === 'loira' && t.n === 2 && t.group === 'cabelo'));
+  pass('legendas: editar, filtrar, buscar e contar');
+  const bruna = (await call('/api/folders', { method: 'POST', body: { name: 'Bruna', persona: true, appName: 'Bruna' } })).data;
+  const carla = (await call('/api/folders', { method: 'POST', body: { name: 'Carla', persona: true } })).data;
+  await act({ ids: [a1.id], action: 'addFolder', folderId: bruna.id });
+  await act({ ids: [a1.id], action: 'used', folderId: bruna.id });
+  const conf = (await act({ ids: [a1.id, a2.id], action: 'addFolder', folderId: carla.id })).data;
+  assert.equal(conf.conflicts.length, 1);
+  assert.deepEqual(conf.conflicts[0].personas, ['Bruna']);
+  pass('persona: avisa que a foto já é da "Bruna" ao pôr na "Carla"');
+
+  // parecido + prévia + direto pro Bunny (mesmo link de download)
+  await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/media/i7.jpg\n${SITE}/media/v5.mp4` } });
+  await waitAll((l) => l.filter((s) => /i7\.jpg|v5\.mp4/.test(s.url)).every((s) => s.status === 'done'));
+  await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/media/i6.jpg`, bunnyFolder: 'Arsenal Bruna' } });
+  await waitAll((l) => l.find((s) => s.url.endsWith('i6.jpg'))?.status === 'done');
+  let i6;
+  for (let i = 0; i < 40; i++) { i6 = (await items()).find((x) => x.file === 'i6.jpg'); if (i6?.bunny?.status === 'done') break; await wait(250); }
+  assert.ok(i6.similarTo?.endsWith('i7.jpg'), JSON.stringify(i6));
+  assert.ok((await items('?similar=1')).some((x) => x.id === i6.id));
+  pass('quase-duplicado: mesma foto em outro tamanho foi marcada como parecida');
+  assert.equal(i6.bunny.status, 'done');
+  assert.match(i6.bunny.url, /\/cofre\/arsenal-bruna\//);
+  assert.equal(i6.local, false);
+  pass('direto pro Bunny: baixou, enviou pra "arsenal-bruna" e apagou do servidor');
+  await act({ ids: [i6.id], action: 'ignoreSimilar' });
+  assert.ok(!(await items('?similar=1')).some((x) => x.id === i6.id));
+  pass('parecido: "manter os dois" tira o aviso');
+  const v5 = (await items()).find((x) => x.file === 'v5.mp4');
+  assert.ok(v5.sprite, 'vídeo de 30 s deveria ter prévia');
+  const sp = await call(v5.sprite);
+  assert.equal(sp.status, 200);
+  pass('prévia de vídeo longo (24 quadros) gerada');
+
+  // corte
+  const cut = await call('/api/items/clip', { method: 'POST', body: { id: v5.id, start: 5, end: 12 } });
+  assert.equal(cut.status, 202, JSON.stringify(cut.data));
+  let clip;
+  for (let i = 0; i < 60; i++) { clip = (await items()).find((x) => x.clipOf === v5.id); if (clip) break; await wait(300); }
+  assert.ok(clip, 'corte não apareceu');
+  assert.ok(Math.abs(clip.duration - 7) < 0.6, 'duração do corte: ' + clip.duration);
+  assert.equal(clip.similarTo, null);
+  pass(`cortar trecho: 0:05–0:12 virou um vídeo de ${clip.duration}s`);
+  const badCut = await call('/api/items/clip', { method: 'POST', body: { id: v5.id, start: 10, end: 8 } });
+  assert.equal(badCut.status, 400);
+  pass('corte com fim antes do início é recusado com explicação');
+
+  // atividade
+  const actv = (await call('/api/activity')).data;
+  const rec = actv.recent.find((r) => r.url.endsWith('v5.mp4'));
+  assert.ok(rec && rec.log.some((l) => /Terminou/.test(l.msg)), JSON.stringify(rec?.log));
+  assert.ok(Array.isArray(actv.uploads) && 'uploadQueue' in actv);
+  pass('atividade: histórico com diário de cada download');
 
   console.log(`\n${ok} testes passaram`);
 } finally {
