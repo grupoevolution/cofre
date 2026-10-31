@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=2">
 </head>
 <body>
   <section id="login" class="screen hidden">
@@ -29,49 +29,137 @@
   <section id="main" class="screen hidden">
     <header class="top">
       <h1>Cofre</h1>
-      <span id="stats" class="muted small"></span>
+      <span id="disk" class="chip"></span>
     </header>
 
     <form id="addForm" class="add">
-      <input id="url" type="url" placeholder="Cole o link do álbum (erome.com/a/…)" autocomplete="off">
+      <textarea id="url" rows="1" placeholder="Cole um ou mais links — qualquer site (um por linha)" autocomplete="off"></textarea>
       <div class="add-actions">
         <button type="button" id="pasteBtn" class="btn">Colar</button>
+        <select id="addFolder" class="sel" title="Salvar em"></select>
         <button class="btn primary" id="addBtn">Salvar</button>
       </div>
       <p id="addMsg" class="small"></p>
     </form>
 
-    <div id="list" class="grid"></div>
-    <p id="empty" class="muted center hidden">Nenhum álbum salvo ainda. Cole um link acima.</p>
+    <nav class="tabs">
+      <button class="tab on" data-tab="lib">Biblioteca</button>
+      <button class="tab" data-tab="dl">Downloads <span id="busyBadge" class="pill hidden"></span></button>
+    </nav>
+
+    <!-- Biblioteca -->
+    <div id="lib">
+      <div id="folders" class="chips"></div>
+      <div id="folderHead" class="folder-head hidden">
+        <h2 id="fName"></h2>
+        <div class="row">
+          <a id="fZip" class="btn small-btn">⬇ Baixar pasta</a>
+          <button id="fBunny" class="btn small-btn">☁ Pasta pro Bunny</button>
+          <button id="fRename" class="btn ghost small-btn">Renomear</button>
+          <button id="fDelete" class="btn danger small-btn">Apagar pasta</button>
+        </div>
+      </div>
+      <div class="filters">
+        <input id="q" type="search" placeholder="Buscar…">
+        <select id="fType" class="sel"><option value="">Foto e vídeo</option><option value="video">Só vídeo</option><option value="image">Só foto</option></select>
+        <select id="fOrient" class="sel"><option value="">Qualquer formato</option><option value="v">Em pé (vertical)</option><option value="h">Deitado (horizontal)</option><option value="q">Quadrado</option></select>
+        <select id="fDur" class="sel"><option value="">Qualquer duração</option><option value="short">Curto (&lt;30s)</option><option value="mid">Médio (30s–2min)</option><option value="long">Longo (&gt;2min)</option></select>
+        <select id="fHd" class="sel"><option value="">Qualquer qualidade</option><option value="1">HD (720p+)</option></select>
+        <select id="fSite" class="sel"><option value="">Todos os sites</option></select>
+        <select id="fUsed" class="sel"><option value="">Usados e não usados</option><option value="0">Ainda não usei</option><option value="1">Já usei</option></select>
+        <select id="fBunnyF" class="sel"><option value="">Bunny: todos</option><option value="1">Já no Bunny</option><option value="0">Fora do Bunny</option></select>
+      </div>
+      <div class="toolbar">
+        <span id="libCount" class="muted small"></span>
+        <button id="selBtn" class="btn ghost small-btn">Selecionar</button>
+      </div>
+      <div id="libGrid" class="media"></div>
+      <button id="moreBtn2" class="btn ghost wide hidden">Mostrar mais</button>
+      <p id="libEmpty" class="muted center hidden">Nada aqui ainda.</p>
+    </div>
+
+    <!-- Downloads -->
+    <div id="dl" class="hidden">
+      <div id="list" class="grid"></div>
+      <p id="empty" class="muted center hidden">Nenhum download ainda. Cole um link acima.</p>
+    </div>
   </section>
 
   <section id="album" class="screen hidden">
     <header class="top">
       <button id="backBtn" class="btn ghost">← Voltar</button>
       <div class="album-actions">
-        <a id="zipBtn" class="btn primary">Baixar tudo (.zip)</a>
+        <a id="zipBtn" class="btn primary">⬇ Baixar tudo</a>
         <button id="moreBtn" class="btn ghost">⋯</button>
       </div>
     </header>
     <div class="album-head">
       <h2 id="aTitle"></h2>
       <p id="aMeta" class="muted small"></p>
+      <p id="aNote" class="small note"></p>
       <p id="aErr" class="err small"></p>
       <div id="aMenu" class="menu hidden">
+        <button id="aFolderBtn" class="btn ghost">📁 Pôr tudo numa pasta</button>
+        <button id="aSelBtn" class="btn ghost">Selecionar</button>
         <a id="openOrig" target="_blank" rel="noopener noreferrer" class="btn ghost">Abrir no site</a>
         <button id="retryBtn" class="btn ghost">Tentar de novo</button>
-        <button id="delBtn" class="btn danger">Apagar álbum</button>
+        <button id="delBtn" class="btn danger">Apagar download</button>
       </div>
     </div>
     <div id="media" class="media"></div>
   </section>
 
-  <div id="viewer" class="viewer hidden">
-    <button id="vClose" class="vclose">✕</button>
-    <div id="vBody"></div>
-    <a id="vDl" class="btn primary vdl">Baixar</a>
+  <!-- Barra de seleção -->
+  <div id="selBar" class="selbar hidden">
+    <div class="selbar-top">
+      <button id="selClose" class="btn ghost small-btn">✕</button>
+      <b id="selCount">0</b>
+      <button id="selAll" class="btn ghost small-btn">Selecionar tudo</button>
+    </div>
+    <div class="selbar-actions">
+      <button data-act="folder" class="btn small-btn">📁 Pasta</button>
+      <button data-act="zip" class="btn small-btn">⬇ Baixar</button>
+      <button data-act="bunny" class="btn small-btn">☁ Bunny</button>
+      <button data-act="links" class="btn small-btn">🔗 Copiar links</button>
+      <button data-act="used" class="btn small-btn">✓ Usado</button>
+      <button data-act="unused" class="btn small-btn">↺ Não usado</button>
+      <button data-act="removeFolder" class="btn small-btn hidden" id="selRemoveFolder">Tirar da pasta</button>
+      <button data-act="freeLocal" class="btn small-btn">🧹 Liberar espaço</button>
+      <button data-act="delete" class="btn danger small-btn">🗑 Apagar</button>
+    </div>
   </div>
 
-  <script src="/app.js"></script>
+  <!-- Escolher pasta -->
+  <div id="sheet" class="sheet hidden">
+    <div class="sheet-box">
+      <h3 id="sheetTitle">Pasta</h3>
+      <div id="sheetMode" class="seg">
+        <button data-mode="addFolder" class="on">Adicionar</button>
+        <button data-mode="move">Mover (tira das outras)</button>
+      </div>
+      <div id="sheetList" class="sheet-list"></div>
+      <button id="sheetNew" class="btn ghost wide">+ Nova pasta</button>
+      <button id="sheetCancel" class="btn ghost wide">Cancelar</button>
+    </div>
+  </div>
+
+  <div id="viewer" class="viewer hidden">
+    <button id="vClose" class="vclose">✕</button>
+    <button id="vPrev" class="vnav l">‹</button>
+    <button id="vNext" class="vnav r">›</button>
+    <div id="vBody"></div>
+    <div class="vbar">
+      <a id="vDl" class="btn primary">⬇ Baixar</a>
+      <button id="vUsed" class="btn">✓ Usado</button>
+      <button id="vBunny" class="btn">☁ Bunny</button>
+      <button id="vLink" class="btn hidden">🔗 Copiar link</button>
+    </div>
+    <p id="vInfo" class="vinfo small"></p>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <form id="zipForm" method="post" action="/api/zip" class="hidden"><input name="ids"><input name="name"></form>
+
+  <script src="/app.js?v=2"></script>
 </body>
 </html>
