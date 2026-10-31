@@ -14,6 +14,15 @@ PWA + servidor Node para baixar vídeos e fotos de **qualquer site**, organizar 
 - **Espaço em disco** no topo, com aviso quando estiver acabando.
 - Downloads com limite de tempo: um link travado não trava a fila. Se o servidor reiniciar, retoma sozinho.
 
+### Novidades 2.2 (arsenal)
+- **Atividade ao vivo:** cada download mostra etapa, %, velocidade, tempo restante e um diário; envios pro Bunny também. Aviso no navegador (🔔) quando termina.
+- **Direto pro Bunny:** no campo de colar, escolha "Direto pro Bunny" + a pasta (lista as pastas que já existem ou cria uma nova). Baixa, envia e apaga do servidor (ou mantém cópia, se marcar).
+- **Etapas do arsenal:** Bruto → Separado → No Bunny → Usado, com contador e filtro. **Favoritos ⭐.**
+- **Legendas automáticas** (loira, morena, ruiva, magra, quarto, selfie…) feitas no próprio servidor por um modelo de visão local (CLIP). Dá para editar, adicionar as suas e filtrar. Desligar: `AUTO_TAGS=0`. Usa ~0,5–1 GB de RAM enquanto legenda.
+- **Pasta = persona (👤):** marque uma pasta como persona; o Cofre avisa se um arquivo já é (ou já foi usado) em outra persona, e guarda "usado em".
+- **Vídeo longo:** prévia de 24 cenas ao passar o mouse/dedo na miniatura e **cortar trecho** no visualizador (Início/Fim → vira um arquivo novo).
+- **Quase-duplicado:** a mesma foto/vídeo em outro tamanho ou recompressão é marcada como "parecida" (filtro "Só os parecidos") para você manter os dois ou apagar.
+
 ## Deploy no EasyPanel
 1. App com fonte GitHub e build por **Dockerfile**.
 2. Variáveis de ambiente: `APP_PIN` e `APP_SECRET` (obrigatórias: **sem PIN o Cofre fica bloqueado**) e as do Bunny. Veja `.env.example`.

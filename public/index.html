@@ -3,21 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0e0f13">
+  <meta name="theme-color" content="#08080b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cofre</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="/style.css?v=6">
 </head>
 <body>
   <section id="login" class="screen hidden">
     <div class="login-box">
-      <div class="logo">▼</div>
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 120 120" width="112" height="112">
+          <defs>
+            <linearGradient id="cfLoginRing" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ff5a7a"/><stop offset=".55" stop-color="#e8194a"/><stop offset="1" stop-color="#ffb547"/>
+            </linearGradient>
+            <radialGradient id="cfLoginCore" cx=".5" cy=".42" r=".6">
+              <stop offset="0" stop-color="#2a0d16"/><stop offset="1" stop-color="#0b0b0f"/>
+            </radialGradient>
+          </defs>
+          <circle cx="60" cy="60" r="56" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+          <g class="logo-dial"><circle cx="60" cy="60" r="50" fill="none" stroke="url(#cfLoginRing)" stroke-width="2" stroke-dasharray="1.5 11.59" stroke-linecap="round"/></g>
+          <circle cx="60" cy="60" r="40" fill="url(#cfLoginCore)" stroke="url(#cfLoginRing)" stroke-width="1.5"/>
+          <path d="M47 51h26L60 72z" fill="url(#cfLoginRing)"/>
+        </svg>
+      </div>
+      <p class="eyebrow">Arsenal privado</p>
       <h1>Cofre</h1>
-      <p class="muted">Digite seu PIN</p>
+      <p class="muted">Digite seu PIN para abrir</p>
       <form id="loginForm">
         <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required>
         <button class="btn primary">Entrar</button>
@@ -28,12 +47,30 @@
 
   <section id="main" class="screen hidden">
     <header class="top">
-      <h1>Cofre</h1>
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+          <defs><linearGradient id="cfBrandGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5a7a"/><stop offset="1" stop-color="#c70d38"/></linearGradient></defs>
+          <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#cfBrandGrad)"/>
+          <circle cx="16" cy="16" r="8.5" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.2" stroke-dasharray="1 2.34"/>
+          <path d="M11.5 13.5h9L16 20z" fill="#fff"/>
+        </svg>
+        <h1>Cofre</h1>
+      </div>
       <span id="disk" class="chip"></span>
     </header>
 
     <form id="addForm" class="add">
+      <div class="add-head"><span class="eyebrow">Capturar</span><span class="add-hint">Instagram, X, OnlyFans, Privacy, YouTube… qualquer site</span></div>
       <textarea id="url" rows="1" placeholder="Cole um ou mais links — qualquer site (um por linha)" autocomplete="off"></textarea>
+      <div id="destSeg" class="seg dest">
+        <button type="button" data-dest="cofre" class="on">📦 Guardar no Cofre</button>
+        <button type="button" data-dest="bunny">☁ Direto pro Bunny</button>
+      </div>
+      <div id="bunnyDest" class="bunny-dest hidden">
+        <input id="bunnyDir" list="bunnyDirs" placeholder="Pasta no Bunny" autocomplete="off">
+        <datalist id="bunnyDirs"></datalist>
+        <label class="check-line small"><input id="keepLocal" type="checkbox"> Manter uma cópia no servidor também</label>
+      </div>
       <div class="add-actions">
         <button type="button" id="pasteBtn" class="btn">Colar</button>
         <select id="addFolder" class="sel" title="Salvar em"></select>
@@ -44,22 +81,29 @@
 
     <nav class="tabs">
       <button class="tab on" data-tab="lib">Biblioteca</button>
-      <button class="tab" data-tab="dl">Downloads <span id="busyBadge" class="pill hidden"></span></button>
+      <button class="tab" data-tab="dl">Atividade <span id="busyBadge" class="pill hidden"></span></button>
       <button class="tab" data-tab="acc">Contas</button>
     </nav>
 
     <!-- Biblioteca -->
     <div id="lib">
+      <div id="stages" class="stages"></div>
       <div id="folders" class="chips"></div>
       <div id="folderHead" class="folder-head hidden">
         <h2 id="fName"></h2>
+        <p id="fPersona" class="small muted"></p>
         <div class="row">
           <a id="fZip" class="btn small-btn">⬇ Baixar pasta</a>
           <button id="fBunny" class="btn small-btn">☁ Pasta pro Bunny</button>
+          <button id="fMoreBtn" class="btn ghost small-btn icon-btn" aria-label="Mais opções da pasta">•••</button>
+        </div>
+        <div id="fMore" class="menu hidden">
           <button id="fRename" class="btn ghost small-btn">Renomear</button>
+          <button id="fPersonaBtn" class="btn ghost small-btn">👤 Persona</button>
           <button id="fDelete" class="btn danger small-btn">Apagar pasta</button>
         </div>
       </div>
+      <div id="tagChips" class="chips tagchips"></div>
       <div class="filters">
         <input id="q" type="search" placeholder="Buscar…">
         <select id="fType" class="sel"><option value="">Foto e vídeo</option><option value="video">Só vídeo</option><option value="image">Só foto</option></select>
@@ -69,6 +113,8 @@
         <select id="fSite" class="sel"><option value="">Todos os sites</option></select>
         <select id="fUsed" class="sel"><option value="">Usados e não usados</option><option value="0">Ainda não usei</option><option value="1">Já usei</option></select>
         <select id="fBunnyF" class="sel"><option value="">Bunny: todos</option><option value="1">Já no Bunny</option><option value="0">Fora do Bunny</option></select>
+        <select id="fFav" class="sel"><option value="">⭐ Todos</option><option value="1">⭐ Só favoritos</option></select>
+        <select id="fSimilar" class="sel"><option value="">Parecidos: todos</option><option value="1">Só os parecidos (revisar)</option></select>
       </div>
       <div class="toolbar">
         <span id="libCount" class="muted small"></span>
@@ -81,6 +127,13 @@
 
     <!-- Downloads -->
     <div id="dl" class="hidden">
+      <div class="act-head">
+        <span id="actSum" class="small muted"></span>
+        <button id="notifyBtn" class="btn ghost small-btn">🔔 Avisar quando terminar</button>
+      </div>
+      <div id="actLive" class="act-live"></div>
+      <div id="actUploads" class="act-live"></div>
+      <h3 class="sec">Histórico</h3>
       <div id="list" class="grid"></div>
       <p id="empty" class="muted center hidden">Nenhum download ainda. Cole um link acima.</p>
     </div>
@@ -116,7 +169,7 @@
       <button id="backBtn" class="btn ghost">← Voltar</button>
       <div class="album-actions">
         <a id="zipBtn" class="btn primary">⬇ Baixar tudo</a>
-        <button id="moreBtn" class="btn ghost">⋯</button>
+        <button id="moreBtn" class="btn ghost icon-btn" aria-label="Mais opções">•••</button>
       </div>
     </header>
     <div class="album-head">
@@ -129,6 +182,7 @@
         <div class="row">
           <button id="aGoAcc" class="btn primary small-btn hidden">🔑 Abrir Contas</button>
           <button id="aRetry2" class="btn small-btn">↻ Tentar de novo</button>
+          <a id="aOpen2" target="_blank" rel="noopener noreferrer" class="btn ghost small-btn">↗ Abrir no site</a>
         </div>
         <details class="small muted"><summary>detalhe técnico</summary><code id="aDetail"></code></details>
       </div>
@@ -151,12 +205,17 @@
       <button id="selAll" class="btn ghost small-btn">Selecionar tudo</button>
     </div>
     <div class="selbar-actions">
-      <button data-act="folder" class="btn small-btn">📁 Pasta</button>
-      <button data-act="zip" class="btn small-btn">⬇ Baixar</button>
-      <button data-act="bunny" class="btn small-btn">☁ Bunny</button>
-      <button data-act="links" class="btn small-btn">🔗 Copiar links</button>
-      <button data-act="used" class="btn small-btn">✓ Usado</button>
-      <button data-act="unused" class="btn small-btn">↺ Não usado</button>
+      <button data-act="approve" class="act"><i>✔</i><span>Separar</span></button>
+      <button data-act="folder" class="act"><i>📁</i><span>Pasta</span></button>
+      <button data-act="bunny" class="act"><i>☁</i><span>Bunny</span></button>
+      <button data-act="zip" class="act"><i>⬇</i><span>Baixar</span></button>
+      <button id="selMoreBtn" class="act"><i>•••</i><span>Mais</span></button>
+    </div>
+    <div id="selMore" class="selbar-more hidden">
+      <button data-act="fav" class="btn small-btn">⭐ Favoritar</button>
+      <button data-act="addTags" class="btn small-btn">🏷 Legenda</button>
+      <button data-act="usedToggle" class="btn small-btn">✓ Usado / não usado</button>
+      <button data-act="links" class="btn small-btn">🔗 Copiar links do Bunny</button>
       <button data-act="removeFolder" class="btn small-btn hidden" id="selRemoveFolder">Tirar da pasta</button>
       <button data-act="freeLocal" class="btn small-btn">🧹 Liberar espaço</button>
       <button data-act="delete" class="btn danger small-btn">🗑 Apagar</button>
@@ -182,18 +241,35 @@
     <button id="vPrev" class="vnav l">‹</button>
     <button id="vNext" class="vnav r">›</button>
     <div id="vBody"></div>
-    <div class="vbar">
-      <a id="vDl" class="btn primary">⬇ Baixar</a>
-      <button id="vUsed" class="btn">✓ Usado</button>
-      <button id="vBunny" class="btn">☁ Bunny</button>
-      <button id="vLink" class="btn hidden">🔗 Copiar link</button>
+    <div class="vpanel">
+      <div id="vSimilar" class="vsimilar small hidden">
+        <span>Parecido com outro arquivo da biblioteca</span>
+        <button id="vSimSee" class="btn small-btn">Ver o outro</button>
+        <button id="vSimKeep" class="btn small-btn">Manter os dois</button>
+        <button id="vSimDel" class="btn danger small-btn">Apagar este</button>
+      </div>
+      <div id="vTags" class="vtags"></div>
+      <div id="vClip" class="vclip hidden">
+        <span class="small muted">✂ Cortar:</span>
+        <button id="vClipA" class="btn small-btn">Início <b id="vClipAT">0:00</b></button>
+        <button id="vClipB" class="btn small-btn">Fim <b id="vClipBT">—</b></button>
+        <button id="vClipGo" class="btn ghost small-btn">Cortar trecho</button>
+      </div>
+      <div class="vbar">
+        <a id="vDl" class="act primary"><i>⬇</i><span>Baixar</span></a>
+        <button id="vFav" class="act"><i>☆</i><span>Favorito</span></button>
+        <button id="vApprove" class="act"><i>✔</i><span>Separar</span></button>
+        <button id="vUsed" class="act"><i>✓</i><span>Usado</span></button>
+        <button id="vBunny" class="act"><i>☁</i><span>Bunny</span></button>
+        <button id="vLink" class="act hidden"><i>🔗</i><span>Link</span></button>
+      </div>
+      <p id="vInfo" class="vinfo small"></p>
     </div>
-    <p id="vInfo" class="vinfo small"></p>
   </div>
 
   <div id="toast" class="toast hidden"></div>
   <form id="zipForm" method="post" action="/api/zip" class="hidden"><input name="ids"><input name="name"></form>
 
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=6"></script>
 </body>
 </html>
