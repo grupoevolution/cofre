@@ -12,6 +12,9 @@ import {
 import { enqueue, resumePending, isActive } from './lib/downloader.js';
 import { bunnyEnabled, queueUpload, resumeUploads, bunnyBusy } from './lib/bunny.js';
 import { engineVersions, startEngineUpdater } from './lib/engines.js';
+import { listAccounts, saveCookies, deleteCookies } from './lib/cookies.js';
+import { proxyMode } from './lib/net.js';
+import { browserEnabled } from './lib/browser.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const PIN = process.env.APP_PIN || '';
@@ -63,8 +66,29 @@ app.get('/api/stats', (req, res) => {
     if (item.bunny?.status === 'done') bunnyFiles++;
   }
   const busy = listAlbums().some((a) => ['queued', 'downloading'].includes(a.status)) || bunnyBusy();
-  res.json({ disk, bytes, files, bunnyFiles, busy, bunny: bunnyEnabled(), engines: engineVersions });
+  res.json({
+    disk, bytes, files, bunnyFiles, busy, bunny: bunnyEnabled(), engines: engineVersions,
+    proxy: proxyMode(), browser: browserEnabled(),
+  });
 });
+
+// ---------- Contas (cookies de login por site) ----------
+app.get('/api/accounts', (req, res) => res.json(listAccounts()));
+app.post('/api/accounts', wrap((req, res) => {
+  const sites = saveCookies(req.body?.text);
+  // links que falharam por login/bloqueio nesses sites voltam para a fila sozinhos
+  const retried = [];
+  for (const a of listAlbums()) {
+    if (a.status !== 'error' || !['login', 'blocked'].includes(a.errorCode)) continue;
+    if (!sites.some((s) => (a.site || '').endsWith(s))) continue;
+    a.status = 'queued';
+    writeAlbum(a);
+    enqueue(a.id);
+    retried.push(a.id);
+  }
+  res.status(201).json({ sites, retried: retried.length, accounts: listAccounts() });
+}));
+app.delete('/api/accounts/:domain', (req, res) => { deleteCookies(req.params.domain); res.json(listAccounts()); });
 
 // ---------- Fontes (cada link colado) ----------
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };

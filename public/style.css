@@ -142,3 +142,17 @@ h1 { margin: 0; font-size: 22px; letter-spacing: -.3px; }
 .vnav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; background: rgba(255,255,255,.08); border: 0; color: #fff; font-size: 34px; width: 44px; height: 64px; border-radius: 10px; cursor: pointer; }
 .vnav.l { left: 8px; } .vnav.r { right: 8px; }
 @media (max-width: 600px) { .vnav { display: none; } }
+
+/* Contas + diagnóstico */
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; margin-bottom: 12px; }
+.panel h3 { margin: 0 0 6px; font-size: 16px; }
+.steps { padding-left: 20px; margin: 8px 0 12px; color: var(--muted); }
+.steps li { margin-bottom: 4px; } .steps b { color: var(--text); }
+.acc-list { display: grid; gap: 8px; margin-bottom: 12px; }
+.acc { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.warn { color: var(--warn); }
+.sys { display: grid; gap: 4px; }
+.diag { background: #1f1416; border: 1px solid #4a2328; border-radius: 12px; padding: 12px; margin: 8px 0; }
+.diag b { color: var(--err); }
+.diag p { margin: 4px 0 10px; }
+.diag details { margin-top: 10px; } .diag code { display: block; white-space: pre-wrap; word-break: break-word; margin-top: 6px; font-size: 12px; }

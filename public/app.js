@@ -254,10 +254,56 @@ function setTab(tab) {
   $$('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#lib').classList.toggle('hidden', tab !== 'lib');
   $('#dl').classList.toggle('hidden', tab !== 'dl');
+  $('#acc').classList.toggle('hidden', tab !== 'acc');
   clearSelection();
   refreshView().catch(fail);
 }
 $$('.tab').forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });
+
+// ---------- Contas ----------
+const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+async function loadAccounts() {
+  const list = await api('/api/accounts');
+  const now = Date.now();
+  $('#accList').innerHTML = list.length ? list.map((a) => {
+    const exp = a.expiresAt ? new Date(a.expiresAt).getTime() : null;
+    const status = !a.valid ? '<span class="err">vencida — exporte de novo</span>'
+      : exp && exp - now < 3 * 864e5 ? `<span class="warn">vence ${fmtDate(a.expiresAt)}</span>`
+      : exp ? `<span class="ok">ok até ${fmtDate(a.expiresAt)}</span>` : '<span class="ok">ok</span>';
+    return `<div class="acc"><div><b>🔑 ${esc(a.domain)}</b><div class="muted small">${a.valid} cookies · atualizada ${fmtDate(a.updatedAt)} · ${status}</div></div>
+      <button class="btn danger small-btn" data-del="${esc(a.domain)}">Remover</button></div>`;
+  }).join('') : '<p class="muted small center">Nenhuma conta ainda. Só precisa para sites que pedem login.</p>';
+  const s = S.stats;
+  const yes = (v, t) => `<span class="${v ? 'ok' : 'muted'}">${v ? '●' : '○'}</span> ${t}`;
+  $('#sysInfo').innerHTML = [
+    yes(s.engines?.['yt-dlp'], `yt-dlp ${esc(s.engines?.['yt-dlp'] || 'não instalado')}`),
+    yes(s.engines?.['gallery-dl'], `gallery-dl ${esc(s.engines?.['gallery-dl'] || 'não instalado')}`),
+    yes(s.browser, s.browser ? 'Navegador invisível ligado (último recurso)' : 'Navegador invisível desligado'),
+    yes(s.proxy !== 'off', s.proxy === 'off' ? 'Proxy: não configurado (PROXY_URL)' : s.proxy === 'always' ? 'Proxy: sempre' : 'Proxy: só quando o site bloquear'),
+    yes(s.bunny, s.bunny ? 'Bunny configurado' : 'Bunny não configurado'),
+  ].map((l) => `<div>${l}</div>`).join('');
+}
+$('#accList').onclick = async (e) => {
+  const b = e.target.closest('[data-del]');
+  if (!b || !confirm(`Remover a conta de ${b.dataset.del}?`)) return;
+  await api('/api/accounts/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }).catch(fail);
+  loadAccounts();
+};
+$('#ckFile').onchange = async () => {
+  const f = $('#ckFile').files[0];
+  if (f) $('#ckText').value = await f.text();
+  $('#ckFile').value = '';
+};
+$('#ckSave').onclick = async () => {
+  const msg = $('#ckMsg');
+  try {
+    const r = await post('/api/accounts', { text: $('#ckText').value });
+    $('#ckText').value = '';
+    msg.className = 'small ok';
+    msg.textContent = `Conta salva: ${r.sites.join(', ')}` + (r.retried ? ` · ${r.retried} download(s) que tinham falhado voltaram para a fila` : '');
+    loadAccounts();
+  } catch (err) { msg.className = 'small err'; msg.textContent = err.message; }
+};
 
 // ---------- Fonte aberta ----------
 async function openAlbum(id) {
@@ -278,7 +324,13 @@ async function loadAlbum(id) {
   $('#aTitle').textContent = a.title || a.url;
   $('#aMeta').textContent = [a.site, a.author && '@' + a.author, `${a.done}/${a.total} arquivos`, fmtBytes(a.bytes), STATUS[a.status], a.status === 'downloading' && a.progress].filter(Boolean).join(' · ');
   $('#aNote').textContent = a.note || '';
+  $('#aDiag').classList.toggle('hidden', !a.error);
   $('#aErr').textContent = a.error || '';
+  $('#aHint').textContent = a.hint || '';
+  $('#aDetail').textContent = a.errorDetail || '';
+  $('#aDetail').closest('details').classList.toggle('hidden', !a.errorDetail);
+  $('#aGoAcc').classList.toggle('hidden', !['login', 'blocked'].includes(a.errorCode));
+  $('#aRetry2').classList.toggle('hidden', !['error', 'partial'].includes(a.status) || a.errorCode === 'drm');
   $('#zipBtn').href = `/api/sources/${id}/zip`;
   $('#zipBtn').classList.toggle('hidden', !a.done);
   $('#openOrig').href = a.url;
@@ -299,6 +351,8 @@ window.onpopstate = () => {
   else { showScreen('main'); clearSelection(); refreshView().catch(fail); }
 };
 $('#moreBtn').onclick = () => $('#aMenu').classList.toggle('hidden');
+$('#aGoAcc').onclick = () => { history.back(); setTimeout(() => setTab('acc'), 50); };
+$('#aRetry2').onclick = () => $('#retryBtn').click();
 $('#retryBtn').onclick = async () => { await post(`/api/sources/${S.currentId}/retry`).catch(fail); loadAlbum(S.currentId); };
 $('#delBtn').onclick = async () => {
   if (!confirm('Apagar esse download e todos os arquivos dele do servidor? (o que já está no Bunny continua lá)')) return;
@@ -534,6 +588,7 @@ $('#vLink').onclick = async () => { await copyText(S.viewList[S.viewIdx].bunny.u
 async function refreshView() {
   if (S.currentId) return loadAlbum(S.currentId);
   if (S.tab === 'dl') return loadSources();
+  if (S.tab === 'acc') return loadAccounts();
   return refreshLib();
 }
 let wasBusy = false;

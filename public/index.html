@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=2">
+  <link rel="stylesheet" href="/style.css?v=3">
 </head>
 <body>
   <section id="login" class="screen hidden">
@@ -45,6 +45,7 @@
     <nav class="tabs">
       <button class="tab on" data-tab="lib">Biblioteca</button>
       <button class="tab" data-tab="dl">Downloads <span id="busyBadge" class="pill hidden"></span></button>
+      <button class="tab" data-tab="acc">Contas</button>
     </nav>
 
     <!-- Biblioteca -->
@@ -83,6 +84,31 @@
       <div id="list" class="grid"></div>
       <p id="empty" class="muted center hidden">Nenhum download ainda. Cole um link acima.</p>
     </div>
+
+    <!-- Contas -->
+    <div id="acc" class="hidden">
+      <div class="panel">
+        <h3>Contas de login</h3>
+        <p class="muted small">Para sites que pedem login (Instagram, OnlyFans, Privacy, X, Facebook…) ou que bloqueiam o servidor (YouTube). O Cofre baixa usando a sua conta.</p>
+        <ol class="small steps">
+          <li>No <b>Chrome do PC</b>, instale a extensão <b>Get cookies.txt LOCALLY</b> (ou <b>Cookie-Editor</b>).</li>
+          <li>Entre <b>logado</b> no site que quer liberar.</li>
+          <li>Clique na extensão → <b>Export</b> (cookies.txt ou JSON) e cole aqui ou envie o arquivo.</li>
+        </ol>
+        <textarea id="ckText" rows="4" placeholder="Cole aqui o conteúdo do cookies.txt ou o JSON exportado"></textarea>
+        <div class="row" style="margin-top:8px">
+          <label class="btn ghost small-btn">📄 Enviar arquivo<input id="ckFile" type="file" accept=".txt,.json,text/plain,application/json" hidden></label>
+          <button id="ckSave" class="btn primary small-btn">Salvar conta</button>
+        </div>
+        <p id="ckMsg" class="small"></p>
+        <p class="muted small">Dica: use uma conta secundária, não a pessoal. Quando o login vencer, é só exportar e colar de novo.</p>
+      </div>
+      <div id="accList" class="acc-list"></div>
+      <div class="panel">
+        <h3>Sistema</h3>
+        <div id="sysInfo" class="small sys"></div>
+      </div>
+    </div>
   </section>
 
   <section id="album" class="screen hidden">
@@ -97,7 +123,15 @@
       <h2 id="aTitle"></h2>
       <p id="aMeta" class="muted small"></p>
       <p id="aNote" class="small note"></p>
-      <p id="aErr" class="err small"></p>
+      <div id="aDiag" class="diag hidden">
+        <b id="aErr"></b>
+        <p id="aHint" class="small"></p>
+        <div class="row">
+          <button id="aGoAcc" class="btn primary small-btn hidden">🔑 Abrir Contas</button>
+          <button id="aRetry2" class="btn small-btn">↻ Tentar de novo</button>
+        </div>
+        <details class="small muted"><summary>detalhe técnico</summary><code id="aDetail"></code></details>
+      </div>
       <div id="aMenu" class="menu hidden">
         <button id="aFolderBtn" class="btn ghost">📁 Pôr tudo numa pasta</button>
         <button id="aSelBtn" class="btn ghost">Selecionar</button>
@@ -160,6 +194,6 @@
   <div id="toast" class="toast hidden"></div>
   <form id="zipForm" method="post" action="/api/zip" class="hidden"><input name="ids"><input name="name"></form>
 
-  <script src="/app.js?v=2"></script>
+  <script src="/app.js?v=3"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -18,9 +19,33 @@ ff('-f', 'lavfi', '-i', 'color=blue:size=400x600', '-frames:v', '1', path.join(M
 ff('-f', 'lavfi', '-i', 'color=green:size=200x200', '-frames:v', '1', path.join(M, 'i3.jpg'));
 ff('-f', 'lavfi', '-i', 'color=yellow:size=200x200', '-frames:v', '1', path.join(M, 'i4.jpg'));
 ff('-f', 'lavfi', '-i', 'color=purple:size=500x800', '-frames:v', '1', path.join(M, 'i5.jpg'));
+ff('-f', 'lavfi', '-i', 'mandelbrot=size=320x240:rate=10', '-t', '3', '-pix_fmt', 'yuv420p', path.join(M, 'v3.mp4'));
+ff('-f', 'lavfi', '-i', 'life=size=320x240:rate=10', '-t', '3', '-pix_fmt', 'yuv420p', path.join(M, 'v4.mp4'));
+
+// Proxy local (túnel CONNECT): conta quantas conexões passaram por ele
+let proxyHits = 0;
+const proxy = http.createServer((req, res) => {
+  proxyHits++; // proxy HTTP comum (URL completa na requisição)
+  const up = http.request(req.url, { method: req.method, headers: req.headers }, (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
+  up.on('error', () => res.writeHead(502).end());
+  req.pipe(up);
+}).on('connect', (req, sock, head) => {
+  proxyHits++;
+  const [h, p] = req.url.split(':');
+  const t = net.connect(Number(p), h, () => { sock.write('HTTP/1.1 200 Connection Established\r\n\r\n'); t.write(head); t.pipe(sock); sock.pipe(t); });
+  t.on('error', () => sock.destroy());
+  sock.on('error', () => t.destroy());
+}).listen(0);
+let once403 = 0;
 
 // "Site qualquer" local: página com <video>, arquivo direto e a página que o yt-dlp falso reconhece
 const site = http.createServer((req, res) => {
+  // link direto que bloqueia a 1ª tentativa (como um site que barra o IP do servidor)
+  if (req.url === '/bloqueado/v4.mp4' && once403++ === 0) return res.writeHead(403).end('forbidden');
+  if (req.url === '/bloqueado/v4.mp4') return fs.createReadStream(path.join(M, 'v4.mp4')).pipe(res);
+  // player que só aparece com JavaScript rodando (yt-dlp/gallery-dl/leitura de HTML não acham)
+  if (req.url === '/jsvideo') return res.end('<html><head><title>Player JS</title></head><body><div id="p"></div><script>setTimeout(function(){var v=document.createElement("video");v.src="/stream/"+"v3"+".mp4";v.muted=true;document.getElementById("p").appendChild(v);v.play();},400)</script></body></html>');
+  if (req.url === '/stream/v3.mp4') { res.writeHead(200, { 'Content-Type': 'video/mp4' }); return fs.createReadStream(path.join(M, 'v3.mp4')).pipe(res); }
   if (req.url === '/pagina') return res.end('<html><head><title>Pagina X</title></head><body><video src="/media/i2.jpg"></video><a href="/media/v.mp4">v</a><a href="media/i5.jpg">foto</a></body></html>');
   if (req.url.startsWith('/media/')) {
     const f = path.join(M, path.basename(req.url));
@@ -37,7 +62,9 @@ const startServer = (env) => spawn(process.execPath, ['--import', './test/mock-f
   env: {
     ...process.env, PORT: String(PORT), DATA_DIR: path.join(root, 'data'), TEST_MEDIA: M,
     YTDLP_BIN: `${process.execPath}|${path.resolve('test/fake-ytdlp.mjs')}`, GALLERYDL_BIN: 'gallery-dl-nao-existe',
-    AUTO_UPDATE_ENGINES: '0', BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: 'k3y', BUNNY_CDN_URL: 'https://cdn.teste', ...env,
+    AUTO_UPDATE_ENGINES: '0', PROXY_URL: `http://127.0.0.1:${proxy.address().port}`,
+    BROWSER_BIN: process.env.BROWSER_BIN || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: 'k3y', BUNNY_CDN_URL: 'https://cdn.teste', ...env,
   },
   stdio: ['ignore', 'inherit', 'inherit'],
 });
@@ -168,8 +195,66 @@ try {
   // 8) mesmo link de novo
   assert.equal((await call('/api/sources', { method: 'POST', body: { urls: `${SITE}/ytpage/1` } })).data.existed, 1);
   pass('link repetido não baixa de novo');
+  // 9) os 4 recursos novos: proxy, contas, navegador invisível, erro com próximo passo
+  const r9 = (await call('/api/sources', { method: 'POST', body: { urls: [
+    `${SITE}/ytblock/1`, `${SITE}/bloqueado/v4.mp4`, `${SITE}/ytlogin/1`, `${SITE}/ytdrm/1`, `${SITE}/jsvideo`, `${SITE}/naoexiste`,
+  ].join('\n') } })).data;
+  assert.equal(r9.added, 6, JSON.stringify(r9));
+  const waitAll = async (pred) => {
+    for (let i = 0; i < 240; i++) {
+      srcs = (await call('/api/sources')).data;
+      if (pred(srcs)) return;
+      await wait(500);
+    }
+    throw new Error('demorou: ' + JSON.stringify(srcs.map((s) => [s.url, s.status, s.progress])));
+  };
+  await waitAll((l) => l.every((s) => !['queued', 'downloading'].includes(s.status)));
+  const get = (frag) => srcs.find((s) => s.url.includes(frag));
+  assert.equal(get('ytblock').status, 'done', JSON.stringify(get('ytblock')));
+  pass('site que bloqueia o servidor: yt-dlp tentou de novo pelo proxy e baixou');
+  assert.equal(get('bloqueado/v4').status, 'done', JSON.stringify(get('bloqueado/v4')));
+  assert.ok(proxyHits > 0, 'proxy não foi usado');
+  pass(`link direto com 403: refez pelo proxy (${proxyHits} conexão(ões) no proxy)`);
+  const js = get('jsvideo');
+  assert.equal(js.status, 'done', JSON.stringify(js));
+  assert.equal(js.title, 'Player JS');
+  pass('navegador invisível: pegou o vídeo de um player que só aparece com JavaScript');
+  const drm = get('ytdrm');
+  assert.equal(drm.errorCode, 'drm', JSON.stringify(drm));
+  pass(`DRM: "${drm.error}" → ${drm.hint}`);
+  const gone = get('naoexiste');
+  assert.equal(gone.errorCode, 'gone', JSON.stringify(gone));
+  pass(`link quebrado: "${gone.error}" → ${gone.hint}`);
+  const lgn = get('ytlogin');
+  assert.equal(lgn.errorCode, 'login', JSON.stringify(lgn));
+  assert.match(lgn.hint, /Contas/);
+  pass(`pediu login: "${lgn.error}" → ${lgn.hint}`);
+
+  // Contas: cola o JSON do Cookie-Editor → o download que falhou por login volta sozinho e baixa
+  const exp = Math.round(Date.now() / 1000) + 30 * 86400;
+  const ckJson = JSON.stringify([{ domain: '127.0.0.1', hostOnly: true, path: '/', secure: false, httpOnly: true, expirationDate: exp, name: 'sessao', value: 'abc' }]);
+  const acc = (await call('/api/accounts', { method: 'POST', body: { text: ckJson } })).data;
+  assert.deepEqual(acc.sites, ['127.0.0.1']);
+  assert.equal(acc.retried, 1, JSON.stringify(acc));
+  const accList = (await call('/api/accounts')).data;
+  assert.equal(accList[0].valid, 1);
+  assert.ok(!JSON.stringify(accList).includes('abc'), 'a API não pode devolver o valor do cookie');
+  await waitAll((l) => l.find((s) => s.url.includes('ytlogin'))?.status === 'done');
+  pass('Contas: colou os cookies → o download que pediu login voltou sozinho e baixou');
+  const bad = await call('/api/accounts', { method: 'POST', body: { text: 'isso não é cookie' } });
+  assert.equal(bad.status, 400);
+  pass(`Contas: formato errado explica o que fazer ("${bad.data.error}")`);
+  await call('/api/accounts/127.0.0.1', { method: 'DELETE' });
+  assert.equal((await call('/api/accounts')).data.length, 0);
+  pass('Contas: remover conta');
+  const st = (await call('/api/stats')).data;
+  assert.equal(st.proxy, 'fallback');
+  assert.equal(st.browser, true);
+  pass('painel Sistema: proxy "só quando bloquear" + navegador ligado');
+
   console.log(`\n${ok} testes passaram`);
 } finally {
   srv.kill();
   site.close();
+  proxy.close();
 }
