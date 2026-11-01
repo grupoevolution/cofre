@@ -39,7 +39,7 @@ const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '-
   env: { ...process.env, PORT, DATA_DIR: dataDir, APP_PIN: '4321', MOCK_BASE: mock.base, NODE_ENV: 'test',
     BUNNY_STORAGE_ZONE: 'zona', BUNNY_STORAGE_KEY: KEY.storage, BUNNY_STORAGE_HOST: mock.base, BUNNY_STORAGE_CDN: 'https://cdn.teste',
     BUNNY_STREAM_LIBRARY_ID: 'L1', BUNNY_STREAM_KEY: KEY.stream, BUNNY_STREAM_API: mock.base + '/stream',
-    DOWNLOAD_CONCURRENCY: '2', MIN_FREE_GB: '0', STALL_TIMEOUT_SEC: '2', FFMPEG_THREADS: '1', HTTPS_PROXY: '', HTTP_PROXY: '' },
+    DOWNLOAD_CONCURRENCY: '2', MIN_FREE_GB: '0', STALL_TIMEOUT_SEC: '2', FFMPEG_THREADS: '1', HTTPS_PROXY: '', HTTP_PROXY: '', https_proxy: '', http_proxy: '', no_proxy: '127.0.0.1', NO_PROXY: '127.0.0.1', YTDLP_AUTO_UPDATE: '0' },
 });
 let log = '';
 srv.stdout.on('data', (d) => { log += d; }); srv.stderr.on('data', (d) => { log += d; });
@@ -155,6 +155,21 @@ try {
   await until(async () => (await folder(f1.id)).media.find((m) => m.id === lone.id).bunny_status === 'sent', 'vídeo sozinho no Stream');
   assert.equal((await folder(f1.id)).media.find((m) => m.id === lone.id).bunny_target, 'stream');
   ok('pasta mista, vídeo enviado sozinho → Bunny Stream');
+
+  // ---- xvideos e TikTok (yt-dlp) ----
+  {
+    const fx = (await api('/api/folders', { method: 'POST', body: { name: 'Sites' } })).body;
+    r = await api('/api/imports', { method: 'POST', body: { folderId: fx.id,
+      text: `${mock.base}/xvideos.com/video.abc123/meu_video ${mock.base}/tiktok.com/@fulano/video/7311111111 ${mock.base}/xvideos.com/video.gone9/x` } });
+    assert.equal(r.body.created, 3);
+    await until(async () => { const d = await folder(fx.id); return d.media.filter((m) => m.status === 'ready').length === 2; }, 'yt-dlp', 60000);
+    await until(async () => (await folder(fx.id)).imports.some((i) => i.status === 'error'), 'link quebrado', 30000);
+    const d = await folder(fx.id);
+    assert.ok(d.media.every((m) => m.type === 'video' && m.thumb && m.duration > 3));
+    assert.ok(d.media.some((m) => m.name.includes('tt-7311111111')) && d.media.some((m) => m.name.includes('xv-abc123')));
+    assert.ok(d.imports.find((i) => i.status === 'error').error);
+    ok('xvideos e TikTok: baixam o vídeo, geram miniatura; link quebrado mostra erro');
+  }
 
   // ---- Bunny Stream (pasta só de vídeo) ----
   const f2 = (await api('/api/folders', { method: 'POST', body: { name: 'Vídeos Reels' } })).body;

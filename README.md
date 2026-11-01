@@ -2,11 +2,13 @@
 
 PWA + servidor Node para juntar mídias em **pastas** e mandar para o **Bunny**.
 
+**Links aceitos** (pode colar vários de uma vez, misturados): álbuns do **erome** (fotos e vídeos), vídeos do **xvideos** e vídeos do **TikTok** (sem marca d'água, inclusive links curtos `vm.tiktok.com`). xvideos e TikTok usam o [yt-dlp](https://github.com/yt-dlp/yt-dlp), que vem no Docker e se atualiza sozinho a cada início — se um desses sites parar de baixar, um novo deploy (ou reinício) costuma resolver.
+
 Você cola (ou compartilha do celular) links de álbuns do erome numa pasta. O servidor baixa as mídias, e daí você edita (recorta, corta a duração, borra, transforma foto em vídeo), envia ao Bunny uma por uma ou em lote e libera o espaço da VPS. A pasta continua no sistema para você ir alimentando.
 
 ## Fluxo
 1. **Crie uma pasta** (ex.: "Criativos de imagem").
-2. **Cole os links**. Pode colar vários de uma vez, um por linha ou misturados num texto.
+2. **Cole os links** (erome, xvideos, TikTok). Pode colar vários de uma vez, um por linha ou misturados num texto.
 3. Embaixo de cada mídia ficam **✎ Editar** e **↑ Bunny**. O download fica no menu **⋯**.
 4. **Selecionar**: marque uma por uma ou use "Selecionar todas" (respeita a busca e os filtros), e depois escolha Enviar ao Bunny, Mover, .zip, Tentar de novo ou Apagar.
 5. **Liberar espaço**: apaga da VPS só o que foi **conferido no Bunny naquele momento**. A miniatura e o registro continuam na aba "No Bunny", com o link.

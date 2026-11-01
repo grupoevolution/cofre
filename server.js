@@ -5,7 +5,8 @@ import archiver from 'archiver';
 import { PORT, PIN, IS_PROD, LIMITS, BUNNY, diskFree } from './lib/config.js';
 import { one, all, run, now, getMedia, getFolder, createFolder, uniqueName, folderStats, setMedia } from './lib/db.js';
 import { authed, login, logout, logoutAll, requireAuth } from './lib/auth.js';
-import { albumUrlsFromText, extractUrl } from './lib/erome.js';
+import { extractUrl } from './lib/erome.js';
+import { linksFromText } from './lib/sources.js';
 import { bus, progress, changedFolder } from './lib/bus.js';
 import { cleanSpec, buildEdit } from './lib/editor.js';
 import { migrateLegacy } from './lib/migrate.js';
@@ -123,10 +124,10 @@ app.get('/api/imports', (req, res) => {
 app.post('/api/imports', (req, res) => {
   const folder = getFolder(req.body?.folderId);
   if (!folder) return bad(res, 'Escolha uma pasta.');
-  const found = albumUrlsFromText(req.body?.text);
-  if (!found.length) return bad(res, 'Nenhum link de álbum reconhecido. Use links do tipo erome.com/a/XXXX.');
+  const found = linksFromText(req.body?.text);
+  if (!found.length) return bad(res, 'Nenhum link reconhecido. Aceito: álbuns do erome (erome.com/a/…), vídeos do xvideos e do TikTok.');
   let created = 0, existed = 0, retried = 0;
-  for (const { id, url } of found) {
+  for (const { id, url, kind } of found) {
     const prev = one('SELECT * FROM imports WHERE folder_id = ? AND source_id = ? ORDER BY id DESC LIMIT 1', folder.id, id);
     if (prev && prev.status === 'error') { run("UPDATE imports SET status = 'queued', error = NULL WHERE id = ?", prev.id); retried++; continue; }
     if (prev) {
@@ -134,7 +135,7 @@ app.post('/api/imports', (req, res) => {
       if (r.changes) retried++; else existed++;
       continue;
     }
-    run("INSERT INTO imports (folder_id, url, source_id, status, created_at) VALUES (?, ?, ?, 'queued', ?)", folder.id, url, id, now());
+    run("INSERT INTO imports (folder_id, url, source_id, kind, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)", folder.id, url, id, kind, now());
     created++;
   }
   changedFolder(folder.id);

@@ -193,7 +193,7 @@ async function addLinks(text, folderId, msgEl) {
   try {
     const r = await api('/api/imports', { method: 'POST', body: { text, folderId } });
     const parts = [];
-    if (r.created) parts.push(`${plural(r.created, 'álbum entrou', 'álbuns entraram')} na fila`);
+    if (r.created) parts.push(`${plural(r.created, 'link entrou', 'links entraram')} na fila`);
     if (r.retried) parts.push(`${plural(r.retried, 'voltou', 'voltaram')} para a fila`);
     if (r.existed) parts.push(`${plural(r.existed, 'já estava', 'já estavam')} nesta pasta`);
     msgEl.className = 'small ok'; msgEl.textContent = parts.join(' · ') + '. Pode colar o próximo.';
