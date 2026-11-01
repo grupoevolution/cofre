@@ -1,20 +1,9 @@
 {
-  "name": "cofre",
-  "version": "2.0.0",
+  "name": "erome-saver",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "test": "node test/run.mjs"
-  },
-  "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
-    "archiver": "^7.0.1",
-    "cheerio": "^1.0.0",
-    "express": "^4.21.1",
-    "puppeteer-core": "^25.16.0",
-    "sharp": "^0.34.5",
-    "undici": "^8.12.3"
-  }
+  "scripts": { "start": "node server.js", "test": "node test/run.js" },
+  "dependencies": { "archiver": "^7.0.1", "cheerio": "^1.0.0", "express": "^4.21.1" }
 }
