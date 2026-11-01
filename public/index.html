@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- Login -->
   <section id="login" class="screen hidden">
     <div class="login-box">
       <div class="logo">▼</div>
@@ -26,51 +27,160 @@
     </div>
   </section>
 
-  <section id="main" class="screen hidden">
+  <!-- Início: pastas -->
+  <section id="home" class="screen hidden">
     <header class="top">
       <h1>Cofre</h1>
-      <span id="stats" class="muted small"></span>
+      <button id="homeMenu" class="btn ghost icon" aria-label="Menu">⋯</button>
     </header>
+    <div id="banner" class="banner hidden"></div>
 
     <form id="addForm" class="add">
-      <input id="url" type="url" placeholder="Cole o link do álbum (erome.com/a/…)" autocomplete="off">
-      <div class="add-actions">
+      <textarea id="urls" rows="2" placeholder="Cole um ou mais links de álbum (erome.com/a/…)"></textarea>
+      <div class="add-row">
+        <select id="addFolder" aria-label="Pasta"></select>
         <button type="button" id="pasteBtn" class="btn">Colar</button>
-        <button class="btn primary" id="addBtn">Salvar</button>
+        <button class="btn primary" id="addBtn">Baixar</button>
       </div>
       <p id="addMsg" class="small"></p>
     </form>
 
-    <div id="list" class="grid"></div>
-    <p id="empty" class="muted center hidden">Nenhum álbum salvo ainda. Cole um link acima.</p>
+    <div id="activity" class="activity"></div>
+
+    <div class="bar-row">
+      <input id="folderSearch" type="search" placeholder="Buscar pasta…" autocomplete="off">
+      <button id="newFolderBtn" class="btn">+ Pasta</button>
+    </div>
+    <div id="folders" class="folders"></div>
+    <p id="noFolders" class="muted center hidden">Crie sua primeira pasta para começar.</p>
+    <p id="diskInfo" class="muted small center"></p>
   </section>
 
-  <section id="album" class="screen hidden">
+  <!-- Pasta -->
+  <section id="folder" class="screen hidden">
     <header class="top">
-      <button id="backBtn" class="btn ghost">← Voltar</button>
-      <div class="album-actions">
-        <a id="zipBtn" class="btn primary">Baixar tudo (.zip)</a>
-        <button id="moreBtn" class="btn ghost">⋯</button>
-      </div>
+      <button id="backBtn" class="btn ghost">←</button>
+      <div class="ftitle"><h1 id="fName"></h1><span id="fMeta" class="muted small"></span></div>
+      <button id="folderMenu" class="btn ghost icon" aria-label="Opções da pasta">⋯</button>
     </header>
-    <div class="album-head">
-      <h2 id="aTitle"></h2>
-      <p id="aMeta" class="muted small"></p>
-      <p id="aErr" class="err small"></p>
-      <div id="aMenu" class="menu hidden">
-        <a id="openOrig" target="_blank" rel="noopener noreferrer" class="btn ghost">Abrir no site</a>
-        <button id="retryBtn" class="btn ghost">Tentar de novo</button>
-        <button id="delBtn" class="btn danger">Apagar álbum</button>
+
+    <form id="addForm2" class="add compact">
+      <input id="urls2" type="text" placeholder="Cole links para baixar nesta pasta" autocomplete="off">
+      <button class="btn primary" id="addBtn2">Baixar</button>
+    </form>
+    <p id="addMsg2" class="small"></p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="local">No sistema <b id="cLocal">0</b></button>
+      <button class="tab" data-tab="bunny">No Bunny <b id="cBunny">0</b></button>
+    </div>
+
+    <div class="filters">
+      <input id="q" type="search" placeholder="Buscar…" autocomplete="off">
+      <select id="fType"><option value="">Tudo</option><option value="video">Vídeos</option><option value="image">Fotos</option></select>
+      <select id="fStatus">
+        <option value="">Qualquer status</option>
+        <option value="ready">Prontas</option>
+        <option value="notsent">Ainda não enviadas</option>
+        <option value="sent">Já no Bunny</option>
+        <option value="busy">Baixando / editando</option>
+        <option value="error">Com erro</option>
+        <option value="edited">Editadas</option>
+      </select>
+    </div>
+
+    <div class="toolbar">
+      <button id="selectBtn" class="btn">Selecionar</button>
+      <button id="freeBtn" class="btn ok hidden"></button>
+      <span id="activityF" class="muted small"></span>
+    </div>
+
+    <div id="importsF" class="activity"></div>
+    <div id="grid" class="grid"></div>
+    <p id="emptyF" class="muted center hidden"></p>
+  </section>
+
+  <!-- Barra de seleção -->
+  <div id="selBar" class="selbar hidden">
+    <div class="selinfo"><b id="selCount">0</b> selecionadas <button id="selAll" class="link">Selecionar todas</button></div>
+    <div class="selactions">
+      <button class="btn primary" data-bulk="send">↑ Enviar ao Bunny</button>
+      <button class="btn" data-bulk="move">Mover</button>
+      <button class="btn" data-bulk="zip">.zip</button>
+      <button class="btn" data-bulk="retry">Tentar de novo</button>
+      <button class="btn danger" data-bulk="delete">Apagar</button>
+      <button class="btn ghost" id="selCancel">✕</button>
+    </div>
+  </div>
+
+  <!-- Visualizador -->
+  <div id="viewer" class="viewer hidden">
+    <button id="vClose" class="vclose" aria-label="Fechar">✕</button>
+    <div id="vBody"></div>
+    <div class="vbar">
+      <button id="vEdit" class="btn">✎ Editar</button>
+      <button id="vSend" class="btn primary">↑ Bunny</button>
+      <a id="vDl" class="btn ghost">↓</a>
+    </div>
+  </div>
+
+  <!-- Editor -->
+  <div id="editor" class="editor hidden">
+    <header class="ed-top">
+      <button id="edClose" class="btn ghost">✕</button>
+      <span id="edTitle" class="muted small"></span>
+      <button id="edSave" class="btn primary">Salvar cópia</button>
+    </header>
+    <div id="edStage" class="ed-stage">
+      <div id="edFrame" class="ed-frame"></div>
+    </div>
+    <div class="ed-tools">
+      <div class="ed-tabs">
+        <button class="chip active" data-ed="crop">Recortar</button>
+        <button class="chip" data-ed="trim">Duração</button>
+        <button class="chip" data-ed="blur">Borrar</button>
+        <button class="chip" data-ed="tovideo">Virar vídeo</button>
+      </div>
+      <div class="ed-panel" data-panel="crop">
+        <div class="chips" id="edAspect">
+          <button class="chip active" data-ar="">Livre</button>
+          <button class="chip" data-ar="0.5625">9:16</button>
+          <button class="chip" data-ar="0.8">4:5</button>
+          <button class="chip" data-ar="1">1:1</button>
+          <button class="chip" data-ar="1.7778">16:9</button>
+          <button class="chip ghost" id="edCropReset">Sem recorte</button>
+        </div>
+        <p class="muted small">Arraste a caixa ou os cantos.</p>
+      </div>
+      <div class="ed-panel hidden" data-panel="trim">
+        <div class="trim">
+          <button id="edPlay" class="btn icon">▶</button>
+          <div class="trim-track" id="edTrack"><div class="trim-sel" id="edTrimSel"></div><div class="trim-head" id="edHead"></div>
+            <input type="range" id="edStart" min="0" max="1000" value="0"><input type="range" id="edEnd" min="0" max="1000" value="1000"></div>
+        </div>
+        <p class="muted small" id="edTrimInfo"></p>
+      </div>
+      <div class="ed-panel hidden" data-panel="blur">
+        <div class="chips">
+          <button class="chip" id="edBlurAll">Borrar tudo</button>
+          <button class="chip" id="edBlurAdd">+ Área</button>
+          <span class="sep"></span>
+          <button class="chip" data-st="1">Fraco</button>
+          <button class="chip active" data-st="2">Médio</button>
+          <button class="chip" data-st="3">Forte</button>
+        </div>
+        <p class="muted small">Toque numa área e depois em ✕ para tirar. O borrão fica parado no mesmo lugar do vídeo.</p>
+      </div>
+      <div class="ed-panel hidden" data-panel="tovideo">
+        <label class="check"><input type="checkbox" id="edToVideo"> Transformar esta foto em vídeo de
+          <input id="edDur" type="number" min="1" max="60" value="5" class="num"> segundos</label>
       </div>
     </div>
-    <div id="media" class="media"></div>
-  </section>
-
-  <div id="viewer" class="viewer hidden">
-    <button id="vClose" class="vclose">✕</button>
-    <div id="vBody"></div>
-    <a id="vDl" class="btn primary vdl">Baixar</a>
   </div>
+
+  <!-- Janela genérica (menus, perguntas) -->
+  <div id="sheet" class="sheet hidden"><div class="sheet-box" id="sheetBox"></div></div>
+  <div id="toast" class="toast hidden"></div>
 
   <script src="/app.js"></script>
 </body>
