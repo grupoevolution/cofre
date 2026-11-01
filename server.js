@@ -40,12 +40,37 @@ app.get('/api/status', (req, res) => {
   const q = one(`SELECT SUM(status = 'queued') AS downloads, SUM(status = 'edit_queued') AS edits,
     SUM(bunny_status = 'queued') AS uploads, SUM(bunny_status = 'verifying') AS verifying FROM media`);
   res.json({
+    quick: quickCounts(),
     disk: diskFree(), paused: queue.state.paused, minFree: LIMITS.minFreeBytes,
     active: queue.activeCounts(), waiting: q, limits: LIMITS,
     imports: one("SELECT COUNT(*) AS n FROM imports WHERE status IN ('queued','parsing')").n,
     bunny: { storage: BUNNY.storage.enabled, stream: BUNNY.stream.enabled },
   });
 });
+
+// ---------- Atalhos: enviar tudo / apagar tudo que já está no Bunny ----------
+const SENDABLE = "status = 'ready' AND local_deleted = 0 AND (bunny_status IS NULL OR bunny_status = 'error')";
+const FREEABLE = "bunny_status = 'sent' AND local_deleted = 0";
+const scope = (folderId) => (folderId ? [' AND folder_id = ?', [Number(folderId)]] : ['', []]);
+function quickCounts(folderId) {
+  const [w, p] = scope(folderId);
+  const a = one(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE ${SENDABLE}${w}`, ...p);
+  const b = one(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE ${FREEABLE}${w}`, ...p);
+  return { sendable: a.n, sendableBytes: a.bytes, freeable: b.n, freeBytes: b.bytes };
+}
+
+app.post('/api/bulk/send-all', (req, res) => {
+  const [w, p] = scope(req.body?.folderId);
+  const list = all(`SELECT id FROM media WHERE ${SENDABLE}${w} ORDER BY id`, ...p).map((r) => r.id);
+  if (!list.length) return res.json({ queued: 0, skipped: [] });
+  res.json(queue.queueSend(list));
+});
+
+app.post('/api/bulk/free-all', wrap(async (req, res) => {
+  const [w, p] = scope(req.body?.folderId);
+  const list = all(`SELECT id FROM media WHERE ${FREEABLE}${w} ORDER BY id`, ...p).map((r) => r.id);
+  res.json(await queue.freeSpace(list));
+}));
 
 // ---------- Pastas ----------
 const folderDto = (f) => ({

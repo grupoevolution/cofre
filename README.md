@@ -11,7 +11,10 @@ Você cola (ou compartilha do celular) links de álbuns do erome numa pasta. O s
 2. **Cole os links** (erome, xvideos, TikTok). Pode colar vários de uma vez, um por linha ou misturados num texto.
 3. Embaixo de cada mídia ficam **✎ Editar** e **↑ Bunny**. O download fica no menu **⋯**.
 4. **Selecionar**: marque uma por uma ou use "Selecionar todas" (respeita a busca e os filtros), e depois escolha Enviar ao Bunny, Mover, .zip, Tentar de novo ou Apagar.
-5. **Liberar espaço**: apaga da VPS só o que foi **conferido no Bunny naquele momento**. A miniatura e o registro continuam na aba "No Bunny", com o link.
+5. **Atalhos** (na tela inicial valem para todas as pastas; dentro da pasta, só para ela):
+   - **↑ Enviar tudo ao Bunny**: manda tudo que está pronto e ainda não foi enviado.
+   - **🧹 Apagar do sistema o que já está no Bunny**: igual ao "Liberar espaço" abaixo, para tudo de uma vez.
+6. **Liberar espaço**: apaga da VPS só o que foi **conferido no Bunny naquele momento**. A miniatura e o registro continuam na aba "No Bunny", com o link.
 
 ## Para onde vai no Bunny
 | O que você envia (de uma vez) | Destino |

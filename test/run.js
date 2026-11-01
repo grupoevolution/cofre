@@ -169,6 +169,16 @@ try {
     assert.ok(d.media.some((m) => m.name.includes('tt-7311111111')) && d.media.some((m) => m.name.includes('xv-abc123')));
     assert.ok(d.imports.find((i) => i.status === 'error').error);
     ok('xvideos e TikTok: baixam o vídeo, geram miniatura; link quebrado mostra erro');
+    // atalhos: enviar tudo / apagar tudo que já está no Bunny
+    let st = (await api('/api/status')).body.quick;
+    assert.ok(st.sendable >= 2);
+    r = await api('/api/bulk/send-all', { method: 'POST', body: { folderId: fx.id } });
+    assert.equal(r.body.queued, 2);
+    await until(async () => (await folder(fx.id)).media.filter((m) => m.bunny_status === 'sent').length === 2, 'enviar tudo', 30000);
+    r = await api('/api/bulk/free-all', { method: 'POST', body: { folderId: fx.id } });
+    assert.equal(r.body.freed, 2);
+    assert.equal((await folder(fx.id)).stats.local, 0);
+    ok('botões "Enviar tudo ao Bunny" e "Apagar o que já está no Bunny" (por pasta)');
   }
 
   // ---- Bunny Stream (pasta só de vídeo) ----

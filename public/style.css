@@ -76,6 +76,9 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .tab.active { color: var(--text); border-color: var(--accent); }
 .filters { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
 .filters select { width: auto; }
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.quick .btn { white-space: normal; text-align: center; line-height: 1.25; padding: 12px; }
+.quick .btn:only-child, .quick .hidden + .btn, .quick .btn:has(+ .hidden) { grid-column: 1 / -1; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
@@ -188,6 +191,8 @@ select { appearance: none; background-image: linear-gradient(45deg, transparent 
 .num { width: 70px; padding: 6px 8px; }
 
 @media (max-width: 520px) {
+  .quick { grid-template-columns: 1fr; }
+  .toolbar .btn { flex: 1 1 auto; }
   .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .folders { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .filters { grid-template-columns: 1fr 1fr; } .filters input { grid-column: 1 / -1; }

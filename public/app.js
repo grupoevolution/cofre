@@ -97,9 +97,57 @@ async function loadHome() {
   fillFolderSelect();
   renderFolders();
   renderActivity($('#activity'), imports, true);
+  renderQuick();
   const d = status.disk;
   $('#diskInfo').textContent = d.total ? `Espaço livre na VPS: ${fmtBytes(d.free)} de ${fmtBytes(d.total)}` : '';
 }
+
+function renderQuick() {
+  const q = S.status?.quick || {};
+  const bunnyOn = S.status?.bunny.storage || S.status?.bunny.stream;
+  $('#qSend').classList.toggle('hidden', !(q.sendable && bunnyOn));
+  $('#qSend').textContent = `↑ Enviar tudo ao Bunny (${q.sendable} · ${fmtBytes(q.sendableBytes)})`;
+  $('#qFree').classList.toggle('hidden', !q.freeable);
+  $('#qFree').textContent = `🧹 Apagar do sistema o que já está no Bunny (${q.freeable} · ${fmtBytes(q.freeBytes)})`;
+  $('#quick').classList.toggle('hidden', !(q.sendable && bunnyOn) && !q.freeable);
+}
+
+async function sendAll(folderId, count, where) {
+  const ok = await confirmBox(`Enviar ${plural(count, 'mídia', 'mídias')} ao Bunny?`,
+    `Vai tudo o que está pronto e ainda não foi enviado ${where}. Elas entram na fila e sobem aos poucos, respeitando o limite da VPS.<br><br>Fotos e vídeos de uma mesma pasta vão juntos para o <b>Storage</b>; pastas só com vídeos vão para o <b>Stream</b>.`,
+    'Enviar tudo');
+  if (!ok) return;
+  try {
+    const r = await api('/api/bulk/send-all', { method: 'POST', body: { folderId } });
+    toast(r.queued ? `${plural(r.queued, 'mídia foi', 'mídias foram')} para a fila do Bunny` : 'Nada novo para enviar.');
+    if (r.skipped?.length) await confirmBox(`${r.skipped.length} não ${r.skipped.length === 1 ? 'pôde' : 'puderam'} ir`, r.skipped.slice(0, 8).map(esc).join('<br>'), 'OK');
+  } catch (e) { fail(e); }
+  refresh();
+}
+
+async function freeAll(folderId, count, bytes, where, btn) {
+  const ok = await confirmBox('Apagar do sistema o que já está no Bunny?',
+    `${plural(count, 'mídia', 'mídias')} ${where} · ${fmtBytes(bytes)}.<br><br>Antes de apagar, confiro <b>cada arquivo no Bunny</b> (existe e está igual). Só o que for confirmado sai da VPS — o resto fica e aparece com erro. As pastas e o histórico continuam aqui.`,
+    'Conferir e apagar', true);
+  if (!ok) return;
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Conferindo no Bunny…';
+  try { showFreeResult(await api('/api/bulk/free-all', { method: 'POST', body: { folderId } })); } catch (e) { fail(e); }
+  finally { btn.disabled = false; btn.textContent = label; }
+  refresh();
+}
+
+async function showFreeResult(r) {
+  if (r.freed) toast(`${fmtBytes(r.bytes)} liberados (${plural(r.freed, 'arquivo conferido', 'arquivos conferidos')} no Bunny)`, 4500);
+  else if (!r.failed.length) toast('Nada para apagar.');
+  if (r.failed.length) {
+    await confirmBox(`${plural(r.failed.length, 'arquivo ficou', 'arquivos ficaram')} no sistema`,
+      'Não deu para confirmar no Bunny, então não apaguei:<br>' + r.failed.slice(0, 8).map((f) => `${esc(f.name)} — ${esc(f.reason)}`).join('<br>'), 'OK');
+  }
+}
+
+$('#qSend').onclick = () => sendAll(null, S.status.quick.sendable, 'em todas as pastas');
+$('#qFree').onclick = (e) => freeAll(null, S.status.quick.freeable, S.status.quick.freeBytes, 'em todas as pastas', e.currentTarget);
 
 function renderBanner() {
   const st = S.status, msgs = [];
@@ -268,7 +316,12 @@ function renderFolderHead() {
   $('#cBunny').textContent = st.sent || 0;
   const freeable = f.media.filter((m) => m.local && m.bunny_status === 'sent');
   $('#freeBtn').classList.toggle('hidden', !freeable.length);
-  $('#freeBtn').textContent = `Liberar espaço (${freeable.length} · ${fmtBytes(freeable.reduce((s, m) => s + (m.size || 0), 0))})`;
+  $('#freeBtn').textContent = `🧹 Apagar o que já está no Bunny (${freeable.length} · ${fmtBytes(freeable.reduce((s, m) => s + (m.size || 0), 0))})`;
+  const sendable = f.media.filter((m) => m.local && m.status === 'ready' && (!m.bunny_status || m.bunny_status === 'error'));
+  const bunnyOn = !S.status || S.status.bunny.storage || S.status.bunny.stream;
+  $('#sendAllBtn').classList.toggle('hidden', !sendable.length || !bunnyOn || S.tab !== 'local');
+  $('#sendAllBtn').textContent = `↑ Enviar tudo ao Bunny (${sendable.length})`;
+  $('#freeBtn').classList.toggle('hidden', !freeable.length || S.tab !== 'local');
   const work = [];
   if (st.busy) work.push(`${st.busy} baixando/editando`);
   if (st.sending) work.push(`${st.sending} indo pro Bunny`);
@@ -511,22 +564,16 @@ function zipIds(list) {
 }
 
 async function freeIds(list) {
-  const r = await api('/api/media/action', { method: 'POST', body: { action: 'free', ids: list } });
-  if (r.freed) toast(`${fmtBytes(r.bytes)} liberados (${plural(r.freed, 'arquivo', 'arquivos')} conferidos no Bunny)`, 4500);
-  if (r.failed.length) {
-    await confirmBox(`${plural(r.failed.length, 'arquivo ficou', 'arquivos ficaram')} no sistema`,
-      'Não deu para confirmar no Bunny, então não apaguei:<br>' + r.failed.slice(0, 8).map((f) => `${esc(f.name)} — ${esc(f.reason)}`).join('<br>'), 'OK');
-  }
+  await showFreeResult(await api('/api/media/action', { method: 'POST', body: { action: 'free', ids: list } }));
   loadFolder();
 }
-$('#freeBtn').onclick = async () => {
+$('#freeBtn').onclick = (e) => {
   const list = S.cur.media.filter((m) => m.local && m.bunny_status === 'sent');
-  const ok = await confirmBox('Liberar espaço na VPS?',
-    `Antes de apagar, confiro <b>cada arquivo no Bunny</b> (existe e tem o mesmo tamanho/checksum). Só o que for confirmado sai do sistema; a pasta e o histórico continuam aqui.<br><br>${plural(list.length, 'arquivo', 'arquivos')} · ${fmtBytes(list.reduce((s, m) => s + (m.size || 0), 0))}`,
-    'Conferir e liberar');
-  if (!ok) return;
-  $('#freeBtn').disabled = true; $('#freeBtn').textContent = 'Conferindo no Bunny…';
-  try { await freeIds(list.map((m) => m.id)); } catch (e) { fail(e); } finally { $('#freeBtn').disabled = false; }
+  freeAll(S.cur.id, list.length, list.reduce((s, m) => s + (m.size || 0), 0), 'desta pasta', e.currentTarget);
+};
+$('#sendAllBtn').onclick = () => {
+  const n = S.cur.media.filter((m) => m.local && m.status === 'ready' && (!m.bunny_status || m.bunny_status === 'error')).length;
+  sendAll(S.cur.id, n, 'nesta pasta');
 };
 
 $('#folderMenu').onclick = async () => {
