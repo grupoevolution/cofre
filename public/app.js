@@ -544,7 +544,7 @@ $('#folderMenu').onclick = async () => {
     } else if (v === 'dest') {
       const st = S.status?.bunny || {};
       const dest = await menu('Para onde vão os arquivos desta pasta?', [
-        { label: 'Automático — pasta só de vídeo vai pro Stream; com fotos, tudo vai pro Storage', value: 'auto' },
+        { label: 'Automático — vídeos enviados sozinhos vão pro Stream; fotos e vídeos enviados juntos vão pro Storage', value: 'auto' },
         { label: `Sempre Storage (pasta com fotos e vídeos)${st.storage === false ? ' — não configurado' : ''}`, value: 'storage' },
         { label: `Vídeos no Stream (fotos continuam no Storage)${st.stream === false ? ' — não configurado' : ''}`, value: 'stream' },
       ]);
@@ -664,6 +664,8 @@ $('#edFrame').addEventListener('click', (e) => {
 function attachRect(el, get, set, aspect) {
   el.addEventListener('pointerdown', (e) => {
     if (e.target.closest('[data-del]')) return;
+    // caixa de recorte ainda na imagem inteira: arrastar desenha um recorte novo (tratado no quadro)
+    if (el.id === 'cropBox' && !e.target.dataset.h && isFull(ED.crop)) return;
     e.preventDefault(); e.stopPropagation();
     if (el.dataset.b !== undefined) { ED.activeBlur = +el.dataset.b; drawOverlays(); }
     const h = e.target.dataset.h || 'move';
@@ -694,6 +696,40 @@ function attachRect(el, get, set, aspect) {
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
 }
+
+const isFull = (r) => r.x < 0.005 && r.y < 0.005 && r.w > 0.995 && r.h > 0.995;
+
+// Recorte livre: arrastar sobre a imagem desenha o retângulo (respeita a proporção escolhida)
+$('#edFrame').addEventListener('pointerdown', (e) => {
+  if (!ED.m || ED.tab !== 'crop' || e.target.closest('i[data-h]')) return;
+  if (e.target.closest('.crop-box') && !isFull(ED.crop)) return; // mover a caixa existente
+  e.preventDefault();
+  const frame = $('#edFrame'), box = frame.getBoundingClientRect();
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  const ax = clamp((e.clientX - box.left) / ED.fw), ay = clamp((e.clientY - box.top) / ED.fh);
+  const before = { ...ED.crop };
+  frame.setPointerCapture(e.pointerId);
+  const move = (ev) => {
+    const bx = clamp((ev.clientX - box.left) / ED.fw), by = clamp((ev.clientY - box.top) / ED.fh);
+    let w = Math.abs(bx - ax), h = Math.abs(by - ay);
+    if (ED.ar) { // mantém a proporção: usa a maior dimensão arrastada e limita à borda
+      h = (w * ED.fw) / (ED.ar * ED.fh);
+      const maxH = by >= ay ? 1 - ay : ay, maxW = bx >= ax ? 1 - ax : ax;
+      if (h > maxH) { h = maxH; w = (h * ED.fh * ED.ar) / ED.fw; }
+      if (w > maxW) { w = maxW; h = (w * ED.fw) / (ED.ar * ED.fh); }
+    }
+    const x = bx >= ax ? ax : ax - w, y = (ED.ar ? by >= ay : by >= ay) ? ay : ay - h;
+    if (w < 0.03 || h < 0.03) return;
+    ED.crop = { x, y, w, h };
+    drawOverlays();
+  };
+  const up = () => {
+    if (ED.crop.w < 0.03 || ED.crop.h < 0.03) ED.crop = before;
+    frame.removeEventListener('pointermove', move); frame.removeEventListener('pointerup', up); frame.removeEventListener('pointercancel', up);
+    drawOverlays();
+  };
+  frame.addEventListener('pointermove', move); frame.addEventListener('pointerup', up); frame.addEventListener('pointercancel', up);
+});
 
 function setEdTab(tab) {
   ED.tab = tab;

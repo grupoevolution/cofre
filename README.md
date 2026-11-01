@@ -12,12 +12,12 @@ Você cola (ou compartilha do celular) links de álbuns do erome numa pasta. O s
 5. **Liberar espaço**: apaga da VPS só o que foi **conferido no Bunny naquele momento**. A miniatura e o registro continuam na aba "No Bunny", com o link.
 
 ## Para onde vai no Bunny
-| Pasta | Destino |
+| O que você envia (de uma vez) | Destino |
 |---|---|
-| Tem fotos (ou fotos e vídeos) | **Storage**, em `/<nome-da-pasta>/arquivo` |
-| Só vídeos | **Stream**, numa coleção com o nome da pasta |
+| Fotos, ou fotos e vídeos juntos (ex.: "Selecionar todas" numa pasta mista) | **Storage**, em `/<nome-da-pasta>/arquivo` |
+| Só vídeo(s) — um vídeo sozinho ou vários vídeos selecionados | **Stream**, numa coleção com o nome da pasta |
 
-Isso é o modo **automático** (padrão). No menu ⋯ da pasta dá para forçar Storage ou Stream. Fotos sempre vão para o Storage, porque o Stream só aceita vídeo.
+Esse é o modo **automático** (padrão). No menu ⋯ da pasta dá para forçar sempre Storage ou sempre Stream (fotos sempre vão pro Storage, porque o Stream só aceita vídeo).
 
 ### Como o sistema garante que o arquivo chegou
 - **Storage:** cada envio leva o SHA256 do arquivo (`Checksum`), e o Bunny recusa se o arquivo chegar diferente. Depois o sistema lista a pasta no Bunny e confere nome e tamanho.

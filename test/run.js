@@ -148,6 +148,14 @@ try {
   await until(async () => (await folder(f1.id)).media.filter((m) => m.status === 'ready' && m.local).length === 4, 'segundo lote');
   ok('reenvio após erro e pasta "alimentada" de novo depois de liberar espaço');
 
+  // pasta mista, mas enviando UM vídeo sozinho → Stream
+  f = await folder(f1.id);
+  const lone = f.media.find((m) => m.type === 'video' && m.status === 'ready' && m.local && !m.bunny_status);
+  await api('/api/media/action', { method: 'POST', body: { action: 'send', ids: [lone.id] } });
+  await until(async () => (await folder(f1.id)).media.find((m) => m.id === lone.id).bunny_status === 'sent', 'vídeo sozinho no Stream');
+  assert.equal((await folder(f1.id)).media.find((m) => m.id === lone.id).bunny_target, 'stream');
+  ok('pasta mista, vídeo enviado sozinho → Bunny Stream');
+
   // ---- Bunny Stream (pasta só de vídeo) ----
   const f2 = (await api('/api/folders', { method: 'POST', body: { name: 'Vídeos Reels' } })).body;
   await api('/api/imports', { method: 'POST', body: { folderId: f2.id, text: 'erome.com/a/vid1' } });
@@ -158,8 +166,7 @@ try {
   await until(async () => (await folder(f2.id)).media.every((m) => m.bunny_status === 'sent'), 'Stream pronto');
   const f2d = await folder(f2.id);
   assert.ok(f2d.media.every((m) => m.bunny_target === 'stream'));
-  assert.equal(mock.collections.size, 1);
-  assert.equal([...mock.collections.values()][0], 'Vídeos Reels');
+  assert.ok([...mock.collections.values()].includes('Vídeos Reels'));
   r = await api('/api/media/action', { method: 'POST', body: { action: 'free', ids: vids } });
   assert.equal(r.body.freed, 2);
   ok('pasta só de vídeo → Bunny Stream, numa coleção com o nome da pasta, confirmado quando o Bunny termina');
