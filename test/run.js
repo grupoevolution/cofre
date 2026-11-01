@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startMocks, KEY } from './mocks.js';
 import { parseAlbum, albumUrlsFromText } from '../lib/erome.js';
@@ -169,6 +169,21 @@ try {
     assert.ok(d.media.some((m) => m.name.includes('tt-7311111111')) && d.media.some((m) => m.name.includes('xv-abc123')));
     assert.ok(d.imports.find((i) => i.status === 'error').error);
     ok('xvideos e TikTok: baixam o vídeo, geram miniatura; link quebrado mostra erro');
+
+    // vídeo em HEVC 10-bit + Opus (o navegador não abre) → converte sozinho para H.264 + AAC
+    const codecs = (id) => execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name,pix_fmt', '-of', 'csv=p=0',
+      path.join(dataDir, 'media', `${id}.mp4`)]).toString().trim().replace(/\n/g, ' | ');
+    const fh = (await api('/api/folders', { method: 'POST', body: { name: 'HEVC' } })).body;
+    await api('/api/imports', { method: 'POST', body: { folderId: fh.id, text: `${mock.base}/tiktok.com/@u/video/777hevc` } });
+    await until(async () => (await folder(fh.id)).media.some((m) => m.status === 'ready'), 'hevc', 60000);
+    const hv = (await folder(fh.id)).media[0];
+    assert.match(codecs(hv.id), /^h264,yuv420p \| aac/);
+    assert.ok(hv.thumb && hv.duration > 2.5);
+    r = await api('/api/media/action', { method: 'POST', body: { action: 'fix', ids: [hv.id] } });
+    assert.equal(r.body.queued, 1);
+    await until(async () => (await folder(fh.id)).media[0].status === 'ready', 'converter manual', 60000);
+    assert.match(codecs(hv.id), /^h264,yuv420p/);
+    ok('vídeo HEVC 10-bit/Opus vira H.264/AAC automaticamente (abre no navegador e no editor); botão Converter funciona');
     // atalhos: enviar tudo / apagar tudo que já está no Bunny
     let st = (await api('/api/status')).body.quick;
     assert.ok(st.sendable >= 2);

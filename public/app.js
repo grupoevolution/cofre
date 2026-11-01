@@ -330,7 +330,7 @@ function renderFolderHead() {
   $('#fStatus').classList.toggle('hidden', S.tab !== 'local');
 }
 
-const BUSY = ['queued', 'downloading', 'edit_queued', 'editing'];
+const BUSY = ['queued', 'downloading', 'edit_queued', 'editing', 'fix_queued', 'fixing'];
 function visibleMedia() {
   if (!S.cur) return [];
   const q = $('#q').value.trim().toLowerCase(), type = $('#fType').value, st = $('#fStatus').value;
@@ -358,6 +358,9 @@ function stateOf(m) {
   const p = S.progress.get(m.id);
   const pct = !p ? null : p.pct != null ? p.pct : p.total ? Math.min(99, Math.floor((p.got / p.total) * 100)) : null;
   if (m.status === 'queued') return { label: 'Na fila', cls: 'wait' };
+  if (m.status === 'downloading' && p?.k === 'cv') return { label: 'Preparando vídeo…', cls: 'live' };
+  if (m.status === 'fix_queued') return { label: 'Na fila p/ converter', cls: 'wait' };
+  if (m.status === 'fixing') return { label: 'Convertendo…', cls: 'live' };
   if (m.status === 'downloading') return { label: `Baixando${pct != null ? ' ' + pct + '%' : '…'}`, cls: 'live', pct };
   if (m.status === 'edit_queued') return { label: 'Na fila de edição', cls: 'wait' };
   if (m.status === 'editing') return { label: 'Editando…', cls: 'live' };
@@ -373,7 +376,7 @@ function stateOf(m) {
 function tileHtml(m) {
   const s = stateOf(m);
   const sel = S.selected.has(m.id);
-  const thumb = m.thumb ? `style="background-image:url('/thumb/${m.id}')"` : '';
+  const thumb = m.thumb ? `style="background-image:url('/thumb/${m.id}?v=${m.size || 0}')"` : '';
   const ready = m.status === 'ready' && m.local;
   const sent = m.bunny_status === 'sent';
   const sending = ['queued', 'uploading', 'verifying'].includes(m.bunny_status);
@@ -475,6 +478,7 @@ async function tileMenu(m) {
   if (m.status === 'ready' && m.local) opts.push({ label: '↓ Baixar arquivo', value: 'dl' });
   if (m.status === 'error' || m.bunny_status === 'error') opts.push({ label: 'Tentar de novo', value: 'retry' });
   if (m.bunny_url) opts.push({ label: 'Copiar link do Bunny', value: 'copy' });
+  if (m.local && m.type === 'video' && m.status === 'ready') opts.push({ label: '🔧 Converter (se o vídeo não abre)', value: 'fix' });
   if (m.local) opts.push({ label: 'Mover para outra pasta', value: 'move' });
   if (m.local && m.bunny_status === 'sent') opts.push({ label: 'Liberar espaço (apagar só da VPS)', value: 'free' });
   opts.push({ label: m.local ? 'Apagar do sistema' : 'Remover do histórico', value: 'delete', danger: true });
@@ -550,7 +554,7 @@ async function bulk(action, list) {
     if (folderId === 'new') { const f = await newFolder(); if (!f) return; folderId = f.id; }
   }
   await api('/api/media/action', { method: 'POST', body: { action, ids: list, folderId } });
-  toast({ delete: 'Apagado.', move: 'Movido.', retry: 'Tentando de novo…' }[action] || 'Feito.');
+  toast({ delete: 'Apagado.', move: 'Movido.', retry: 'Tentando de novo…', fix: 'Convertendo — o vídeo fica pronto em instantes.' }[action] || 'Feito.');
   if (S.select) setSelectMode(false);
   loadFolder();
   api('/api/folders').then((f) => { S.folders = f; }).catch(() => {});
@@ -616,13 +620,34 @@ $('#backBtn').onclick = () => { location.hash = ''; };
 let viewing = null;
 function openViewer(m) {
   viewing = m;
-  const src = `/media/${m.id}`;
+  const src = `/media/${m.id}?v=${m.size || 0}`;
   $('#vBody').innerHTML = m.type === 'image' ? `<img src="${src}" alt="">` : `<video src="${src}" controls autoplay playsinline></video>`;
-  $('#vDl').href = src + '?dl=1';
+  const v = $('#vBody video');
+  if (v) watchVideo(v, m);
+  $('#vDl').href = `/media/${m.id}?dl=1`;
   $('#vSend').textContent = m.bunny_status === 'sent' ? '✓ No Bunny' : '↑ Bunny';
   $('#vSend').disabled = ['queued', 'uploading', 'verifying', 'sent'].includes(m.bunny_status);
   $('#viewer').classList.remove('hidden');
 }
+// Se o vídeo der erro ou não carregar em 10s, oferece converter
+function watchVideo(v, m) {
+  let done = false;
+  const t = setTimeout(() => { if (!done && v.isConnected && v.readyState < 1) cantPlay(m); }, 10_000);
+  v.addEventListener('loadedmetadata', () => {
+    done = true; clearTimeout(t);
+    if (!v.videoWidth) cantPlay(m); // só o áudio abriu: o codec de vídeo não é suportado (ex.: HEVC)
+  }, { once: true });
+  v.addEventListener('error', () => { if (!done) { done = true; clearTimeout(t); cantPlay(m); } }, { once: true });
+}
+
+async function cantPlay(m) {
+  closeViewer(); if (ED.m) closeEditor();
+  const ok = await confirmBox('Esse vídeo não abre no navegador',
+    'O site entregou o vídeo num formato que o navegador não toca (ex.: HEVC/H.265). Converto para um MP4 comum — depois ele abre, edita e vai pro Bunny normalmente.',
+    '🔧 Converter agora');
+  if (ok) { await api('/api/media/action', { method: 'POST', body: { action: 'fix', ids: [m.id] } }).catch(fail); toast('Convertendo… acompanhe no card.'); loadFolder(); }
+}
+
 function closeViewer() { $('#vBody').innerHTML = ''; $('#viewer').classList.add('hidden'); viewing = null; }
 $('#vClose').onclick = closeViewer;
 $('#vEdit').onclick = () => { const m = viewing; closeViewer(); openEditor(m); };
@@ -646,16 +671,19 @@ function openEditor(m) {
   const el = document.createElement(m.type === 'video' ? 'video' : 'img');
   el.className = 'ed-media';
   if (m.type === 'video') { el.muted = true; el.playsInline = true; el.preload = 'auto'; el.loop = false; }
-  el.src = `/media/${m.id}`;
+  el.src = `/media/${m.id}?v=${m.size || 0}`;
   ED.el = el;
   frame.appendChild(el);
   frame.insertAdjacentHTML('beforeend', '<div class="crop-box" id="cropBox"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div><div id="blurLayer"></div>');
   const ready = () => {
     ED.nw = el.naturalWidth || el.videoWidth; ED.nh = el.naturalHeight || el.videoHeight;
+    if (!ED.nw) return; // vídeo sem imagem: watchVideo oferece converter
     if (m.type === 'video') { ED.trim = { start: 0, end: el.duration }; $('#edStart').value = 0; $('#edEnd').value = 1000; updateTrim(); }
     layoutEditor();
   };
   if (m.type === 'video') el.onloadedmetadata = ready; else el.onload = ready;
+  if (m.type === 'video') watchVideo(el, m);
+  else el.onerror = () => { toast('Não consegui abrir essa imagem.'); closeEditor(); };
   $('#editor').classList.remove('hidden');
   setEdTab('crop');
   attachRect($('#cropBox'), () => ED.crop, (r) => { ED.crop = r; }, () => ED.ar);

@@ -114,7 +114,7 @@ app.delete('/api/folders/:id', (req, res) => {
 
 const mediaDto = (m) => ({
   id: m.id, folder_id: m.folder_id, import_id: m.import_id, parent_id: m.parent_id, type: m.type, name: m.name, ext: m.ext,
-  size: m.size, duration: m.duration, width: m.width, height: m.height, status: m.status, error: m.error,
+  size: m.size, duration: m.duration, width: m.width, height: m.height, status: m.status, error: m.error === 'force' ? null : m.error,
   local: !m.local_deleted, thumb: Boolean(m.thumb), created_at: m.created_at, edited: m.source_kind === 'edit',
   bunny_status: m.bunny_status, bunny_target: m.bunny_target, bunny_url: m.bunny_url, bunny_path: m.bunny_path,
   bunny_error: m.bunny_error, sent_at: m.sent_at, progress: progress.get(m.id) || null,
@@ -194,6 +194,11 @@ app.post('/api/media/action', wrap(async (req, res) => {
     let n = 0;
     for (const id of list) { const m = getMedia(id); if (m) { queue.deleteMedia(m); n++; } }
     return res.json({ deleted: n });
+  }
+  if (action === 'fix') {
+    let n = 0;
+    for (const id of list) { const m = getMedia(id); if (m && queue.queueFix(m)) n++; }
+    return res.json({ queued: n });
   }
   if (action === 'retry') {
     const send = [];

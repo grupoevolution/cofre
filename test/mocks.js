@@ -41,7 +41,7 @@ export function startMocks() {
       // "xvideos"/"TikTok" falsos: o yt-dlp recebe um mp4 direto (extrator genérico)
       if (/\/(xvideos\.com\/video|tiktok\.com\/@)/.test(u.pathname)) {
         if (u.pathname.includes('gone')) return json(404, {});
-        const f = fs.readFileSync(path.join(FIX, 'v.mp4'));
+        const f = fs.readFileSync(path.join(FIX, u.pathname.includes('hevc') ? 'hevc.mp4' : 'v.mp4'));
         res.writeHead(200, { 'content-type': 'video/mp4', 'content-length': f.length }); return res.end(f);
       }
       if (u.pathname.startsWith('/cdn/')) {
