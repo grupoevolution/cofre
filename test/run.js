@@ -196,6 +196,40 @@ try {
     ok('botões "Enviar tudo ao Bunny" e "Apagar o que já está no Bunny" (por pasta)');
   }
 
+  // ---- Subpastas ----
+  {
+    const chats = (await api('/api/folders', { method: 'POST', body: { name: 'Chats' } })).body;
+    const fulana = (await api('/api/folders', { method: 'POST', body: { name: 'Fulana', parentId: chats.id } })).body;
+    const vids = (await api('/api/folders', { method: 'POST', body: { name: 'Vídeos', parentId: chats.id } })).body;
+    assert.equal(fulana.slug, 'chats/fulana');
+    assert.deepEqual(fulana.trail.map((x) => x.name), ['Chats', 'Fulana']);
+    await api('/api/imports', { method: 'POST', body: { folderId: fulana.id, text: 'erome.com/a/chatmix1' } });
+    await api('/api/imports', { method: 'POST', body: { folderId: vids.id, text: 'erome.com/a/vidchat1' } });
+    await api('/api/imports', { method: 'POST', body: { folderId: chats.id, text: 'erome.com/a/chatmix2' } });
+    await until(async () => (await folder(chats.id)).deep.ready === 8, 'subpastas baixando', 60000);
+    let c = await folder(chats.id);
+    assert.equal(c.subfolders.length, 2);
+    assert.equal(c.stats.local, 3);   // mídias soltas na própria pasta
+    assert.equal(c.quick.sendable, 8); // pasta + subpastas
+    r = await api('/api/bulk/send-all', { method: 'POST', body: { folderId: chats.id } });
+    assert.equal(r.body.queued, 8);
+    await until(async () => (await folder(chats.id)).deep.sent === 8, 'enviar pasta com subpastas', 60000);
+    const keys = [...mock.storage.keys()];
+    assert.equal(keys.filter((k) => k.startsWith('chats/fulana/')).length, 3);
+    assert.equal(keys.filter((k) => /^chats\/[^/]+$/.test(k)).length, 3);
+    assert.ok([...mock.collections.values()].includes('Chats / Vídeos'));
+    r = await api('/api/bulk/free-all', { method: 'POST', body: { folderId: chats.id } });
+    assert.equal(r.body.freed, 8);
+    c = await folder(chats.id);
+    assert.equal(c.deep.local, 0); assert.equal(c.deep.sent, 8);
+    // alimentar de novo a subpasta
+    await api('/api/imports', { method: 'POST', body: { folderId: fulana.id, text: 'erome.com/a/chatmix3' } });
+    await until(async () => (await folder(fulana.id)).stats.ready === 3, 'subpasta de novo', 30000);
+    await api('/api/folders/' + chats.id, { method: 'DELETE' });
+    assert.equal((await api('/api/folders/' + fulana.id)).status, 404);
+    ok('subpastas: Chats/Fulana → Bunny "chats/fulana/", Stream "Chats / Vídeos", enviar/apagar tudo inclui subpastas, apagar pasta leva as subpastas');
+  }
+
   // ---- Bunny Stream (pasta só de vídeo) ----
   const f2 = (await api('/api/folders', { method: 'POST', body: { name: 'Vídeos Reels' } })).body;
   await api('/api/imports', { method: 'POST', body: { folderId: f2.id, text: 'erome.com/a/vid1' } });

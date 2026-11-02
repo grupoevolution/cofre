@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
 import { PORT, PIN, IS_PROD, LIMITS, BUNNY, diskFree } from './lib/config.js';
-import { one, all, run, now, getMedia, getFolder, createFolder, uniqueName, folderStats, setMedia } from './lib/db.js';
+import { one, all, run, now, getMedia, getFolder, createFolder, uniqueName, folderStats, setMedia, subtreeIds, folderTrail } from './lib/db.js';
 import { authed, login, logout, logoutAll, requireAuth } from './lib/auth.js';
 import { extractUrl } from './lib/erome.js';
 import { linksFromText } from './lib/sources.js';
@@ -51,7 +51,12 @@ app.get('/api/status', (req, res) => {
 // ---------- Atalhos: enviar tudo / apagar tudo que já está no Bunny ----------
 const SENDABLE = "status = 'ready' AND local_deleted = 0 AND (bunny_status IS NULL OR bunny_status = 'error')";
 const FREEABLE = "bunny_status = 'sent' AND local_deleted = 0";
-const scope = (folderId) => (folderId ? [' AND folder_id = ?', [Number(folderId)]] : ['', []]);
+// com pasta: ela + todas as subpastas
+const scope = (folderId) => {
+  if (!folderId) return ['', []];
+  const ids = subtreeIds(folderId);
+  return [` AND folder_id IN (${ids.map(() => '?').join(',')})`, ids];
+};
 function quickCounts(folderId) {
   const [w, p] = scope(folderId);
   const a = one(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE ${SENDABLE}${w}`, ...p);
@@ -73,10 +78,18 @@ app.post('/api/bulk/free-all', wrap(async (req, res) => {
 }));
 
 // ---------- Pastas ----------
-const folderDto = (f) => ({
-  ...f, stats: folderStats(f.id),
-  cover: one('SELECT id FROM media WHERE folder_id = ? AND thumb IS NOT NULL ORDER BY id DESC LIMIT 1', f.id)?.id || null,
-});
+const folderDto = (f) => {
+  const ids = subtreeIds(f.id);
+  const q = ids.map(() => '?').join(',');
+  return {
+    ...f,
+    stats: folderStats(f.id),        // só a própria pasta
+    deep: folderStats(ids),          // pasta + subpastas (para os cards)
+    children: ids.length - 1 ? one('SELECT COUNT(*) AS n FROM folders WHERE parent_id = ?', f.id).n : 0,
+    trail: folderTrail(f.id),
+    cover: one(`SELECT id FROM media WHERE folder_id IN (${q}) AND thumb IS NOT NULL ORDER BY id DESC LIMIT 1`, ...ids)?.id || null,
+  };
+};
 
 app.get('/api/folders', (req, res) => {
   res.json(all(`SELECT f.* FROM folders f LEFT JOIN media m ON m.folder_id = f.id
@@ -84,7 +97,7 @@ app.get('/api/folders', (req, res) => {
 });
 
 app.post('/api/folders', (req, res) => {
-  try { res.status(201).json(folderDto(createFolder(req.body?.name))); } catch (e) { bad(res, e.message); }
+  try { res.status(201).json(folderDto(createFolder(req.body?.name, req.body?.parentId || null))); } catch (e) { bad(res, e.message); }
 });
 
 app.patch('/api/folders/:id', (req, res) => {
@@ -106,7 +119,8 @@ app.patch('/api/folders/:id', (req, res) => {
 app.delete('/api/folders/:id', (req, res) => {
   const f = getFolder(req.params.id);
   if (!f) return bad(res, 'Pasta não encontrada', 404);
-  for (const m of all('SELECT * FROM media WHERE folder_id = ?', f.id)) queue.deleteMedia(m);
+  const ids = subtreeIds(f.id); // apaga junto as subpastas
+  for (const m of all(`SELECT * FROM media WHERE folder_id IN (${ids.map(() => '?').join(',')})`, ...ids)) queue.deleteMedia(m);
   run('DELETE FROM folders WHERE id = ?', f.id);
   changedFolder(0);
   res.json({ ok: true });
@@ -125,6 +139,8 @@ app.get('/api/folders/:id', (req, res) => {
   if (!f) return bad(res, 'Pasta não encontrada', 404);
   res.json({
     ...folderDto(f),
+    quick: quickCounts(f.id),
+    subfolders: all('SELECT * FROM folders WHERE parent_id = ? ORDER BY name COLLATE NOCASE', f.id).map(folderDto),
     media: all('SELECT * FROM media WHERE folder_id = ? ORDER BY id DESC', f.id).map(mediaDto),
     imports: importsList('WHERE i.folder_id = ?', f.id),
   });
@@ -251,11 +267,12 @@ app.post('/api/zip', (req, res) => {
   const items = ids(req.body?.ids).map(getMedia).filter((m) => m && m.status === 'ready' && !m.local_deleted);
   if (!items.length) return res.status(400).send('Nenhum arquivo disponível no sistema.');
   const folder = getFolder(items[0].folder_id);
-  res.attachment(`${folder.slug}.zip`);
+  const zipName = folder.slug.replace(/\//g, '_');
+  res.attachment(`${zipName}.zip`);
   const zip = archiver('zip', { store: true }); // fotos e vídeos já são comprimidos
   zip.on('error', (e) => { console.error(e); res.destroy(e); });
   zip.pipe(res);
-  for (const m of items) zip.file(queue.localPath(m), { name: `${folder.slug}/${m.name}` });
+  for (const m of items) zip.file(queue.localPath(m), { name: `${zipName}/${m.name}` });
   zip.finalize();
 });
 

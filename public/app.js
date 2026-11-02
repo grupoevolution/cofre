@@ -158,11 +158,24 @@ function renderBanner() {
   $('#banner').classList.toggle('hidden', !msgs.length);
 }
 
+const pathLabel = (f) => (f.trail?.length ? f.trail.map((x) => x.name).join(' › ') : f.name);
+/** Pastas em ordem de árvore: [{f, depth}] (principais na ordem de atividade, subpastas por nome) */
+function folderTree(list = S.folders) {
+  const kids = new Map();
+  for (const f of list) { const k = f.parent_id || 0; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(f); }
+  for (const [k, arr] of kids) if (k) arr.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const out = [];
+  const walk = (pid, depth) => (kids.get(pid) || []).forEach((f) => { out.push({ f, depth }); walk(f.id, depth + 1); });
+  walk(0, 0);
+  return out;
+}
+const indentName = ({ f, depth }) => `${'\u00a0\u00a0\u00a0'.repeat(depth)}${depth ? '↳ ' : ''}${f.name}`;
+
 function fillFolderSelect() {
   const sel = $('#addFolder');
   const keep = Number(sel.value) || S.lastFolderId;
   sel.innerHTML = (S.folders.length ? '' : '<option value="">— crie uma pasta —</option>') +
-    S.folders.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('') +
+    folderTree().map((t) => `<option value="${t.f.id}">${esc(indentName(t))}</option>`).join('') +
     '<option value="new">+ Nova pasta…</option>';
   if (S.folders.some((f) => f.id === keep)) sel.value = keep;
 }
@@ -173,37 +186,45 @@ $('#addFolder').onchange = async (e) => {
   if (f) $('#addFolder').value = f.id;
 };
 
-async function newFolder() {
-  const name = await ask('Nome da nova pasta', { placeholder: 'Ex.: Criativos de imagem', ok: 'Criar' });
+async function newFolder(parentId = null) {
+  const parent = parentId && (S.folders.find((f) => f.id === parentId) || S.cur);
+  const name = await ask(parent ? `Nova subpasta em "${parent.name}"` : 'Nome da nova pasta',
+    { placeholder: parent ? 'Ex.: Fulana' : 'Ex.: Criativos de imagem', ok: 'Criar' });
   if (!name) return null;
   try {
-    const f = await api('/api/folders', { method: 'POST', body: { name } });
+    const f = await api('/api/folders', { method: 'POST', body: { name, parentId } });
     S.folders.unshift(f); remember(f.id); renderFolders(); fillFolderSelect();
     return f;
   } catch (e) { fail(e); return null; }
 }
 $('#newFolderBtn').onclick = async () => { const f = await newFolder(); if (f) location.hash = '#f/' + f.id; };
 
-function folderLine(st) {
+function folderLine(st, children) {
   const parts = [];
+  if (children) parts.push(plural(children, 'subpasta', 'subpastas'));
   if (st.local) parts.push(`${st.local} no sistema`);
   if (st.sent) parts.push(`${st.sent} no Bunny`);
   return parts.join(' · ') || 'vazia';
 }
 
+function folderCard(f, showPath) {
+  const st = f.deep || f.stats;
+  const busy = (st.busy || 0) + (st.sending || 0);
+  return `<a class="fcard" href="#f/${f.id}">
+    <div class="fcover" ${f.cover ? `style="background-image:url('/thumb/${f.cover}')"` : ''}>${f.cover ? '' : '<span>📁</span>'}
+      ${busy ? `<span class="badge live">${st.busy ? 'baixando' : 'enviando'} ${busy}</span>` : ''}
+      ${st.errors ? `<span class="badge err">⚠ ${st.errors}</span>` : ''}</div>
+    <div class="finfo"><div class="t">${f.children ? '📁 ' : ''}${esc(showPath ? pathLabel(f) : f.name)}</div>
+      <div class="muted small">${esc(folderLine(st, f.children))}</div></div></a>`;
+}
+
 function renderFolders() {
   const q = $('#folderSearch').value.trim().toLowerCase();
-  const list = S.folders.filter((f) => !q || f.name.toLowerCase().includes(q));
+  // sem busca: só as pastas principais; com busca: procura em todos os níveis
+  const list = q ? S.folders.filter((f) => pathLabel(f).toLowerCase().includes(q)) : S.folders.filter((f) => !f.parent_id);
   $('#noFolders').classList.toggle('hidden', S.folders.length > 0);
-  $('#folders').innerHTML = list.map((f) => {
-    const st = f.stats;
-    const busy = (st.busy || 0) + (st.sending || 0);
-    return `<a class="fcard" href="#f/${f.id}">
-      <div class="fcover" ${f.cover ? `style="background-image:url('/thumb/${f.cover}')"` : ''}>${f.cover ? '' : '<span>📁</span>'}
-        ${busy ? `<span class="badge live">${st.busy ? 'baixando' : 'enviando'} ${busy}</span>` : ''}
-        ${st.errors ? `<span class="badge err">⚠ ${st.errors}</span>` : ''}</div>
-      <div class="finfo"><div class="t">${esc(f.name)}</div><div class="muted small">${esc(folderLine(st))}</div></div></a>`;
-  }).join('') || (q ? '<p class="muted center">Nenhuma pasta com esse nome.</p>' : '');
+  $('#folders').innerHTML = list.map((f) => folderCard(f, Boolean(q))).join('')
+    || (q ? '<p class="muted center">Nenhuma pasta com esse nome.</p>' : '');
 }
 $('#folderSearch').oninput = renderFolders;
 
@@ -311,17 +332,19 @@ function renderFolderHead() {
   const f = S.cur, st = f.stats;
   $('#fName').textContent = f.name;
   const dest = { auto: 'automático', storage: 'Storage', stream: 'Stream' }[f.dest];
-  $('#fMeta').textContent = `${fmtBytes(st.bytes)} no sistema · destino: ${dest}`;
+  const crumbs = f.trail.slice(0, -1).map((x) => `<a href="#f/${x.id}">${esc(x.name)}</a> › `).join('');
+  $('#fMeta').innerHTML = `${crumbs ? `<span class="crumb">${crumbs.replace(/ › $/, '')} ›</span>` : ''}${fmtBytes(st.bytes)} no sistema · destino: ${dest}`;
+  $('#subfolders').innerHTML = f.subfolders.map((c) => folderCard(c)).join('') +
+    `<button class="fcard add" id="addSubBtn" ${f.subfolders.length ? '' : 'style="grid-column:1/-1"'}>+ Subpasta</button>`;
   $('#cLocal').textContent = st.local || 0;
   $('#cBunny').textContent = st.sent || 0;
-  const freeable = f.media.filter((m) => m.local && m.bunny_status === 'sent');
-  $('#freeBtn').classList.toggle('hidden', !freeable.length);
-  $('#freeBtn').textContent = `🧹 Apagar o que já está no Bunny (${freeable.length} · ${fmtBytes(freeable.reduce((s, m) => s + (m.size || 0), 0))})`;
-  const sendable = f.media.filter((m) => m.local && m.status === 'ready' && (!m.bunny_status || m.bunny_status === 'error'));
+  // atalhos valem para a pasta + subpastas
+  const q = f.quick, withSubs = f.subfolders.length ? ' · com subpastas' : '';
   const bunnyOn = !S.status || S.status.bunny.storage || S.status.bunny.stream;
-  $('#sendAllBtn').classList.toggle('hidden', !sendable.length || !bunnyOn || S.tab !== 'local');
-  $('#sendAllBtn').textContent = `↑ Enviar tudo ao Bunny (${sendable.length})`;
-  $('#freeBtn').classList.toggle('hidden', !freeable.length || S.tab !== 'local');
+  $('#freeBtn').textContent = `🧹 Apagar o que já está no Bunny (${q.freeable} · ${fmtBytes(q.freeBytes)}${withSubs})`;
+  $('#freeBtn').classList.toggle('hidden', !q.freeable || S.tab !== 'local');
+  $('#sendAllBtn').textContent = `↑ Enviar tudo ao Bunny (${q.sendable}${withSubs})`;
+  $('#sendAllBtn').classList.toggle('hidden', !q.sendable || !bunnyOn || S.tab !== 'local');
   const work = [];
   if (st.busy) work.push(`${st.busy} baixando/editando`);
   if (st.sending) work.push(`${st.sending} indo pro Bunny`);
@@ -548,8 +571,9 @@ async function bulk(action, list) {
   }
   let folderId;
   if (action === 'move') {
-    const others = S.folders.filter((f) => f.id !== S.cur.id);
-    folderId = await menu('Mover para…', [...others.map((f) => ({ label: f.name, value: f.id })), { label: '+ Nova pasta…', value: 'new' }]);
+    if (!S.folders.length) S.folders = await api('/api/folders');
+    const others = folderTree().filter((t) => t.f.id !== S.cur.id);
+    folderId = await menu('Mover para…', [...others.map((t) => ({ label: indentName(t), value: t.f.id })), { label: '+ Nova pasta…', value: 'new' }]);
     if (!folderId) return;
     if (folderId === 'new') { const f = await newFolder(); if (!f) return; folderId = f.id; }
   }
@@ -572,24 +596,29 @@ async function freeIds(list) {
   loadFolder();
 }
 $('#freeBtn').onclick = (e) => {
-  const list = S.cur.media.filter((m) => m.local && m.bunny_status === 'sent');
-  freeAll(S.cur.id, list.length, list.reduce((s, m) => s + (m.size || 0), 0), 'desta pasta', e.currentTarget);
+  const q = S.cur.quick;
+  freeAll(S.cur.id, q.freeable, q.freeBytes, S.cur.subfolders.length ? 'desta pasta e das subpastas' : 'desta pasta', e.currentTarget);
 };
-$('#sendAllBtn').onclick = () => {
-  const n = S.cur.media.filter((m) => m.local && m.status === 'ready' && (!m.bunny_status || m.bunny_status === 'error')).length;
-  sendAll(S.cur.id, n, 'nesta pasta');
-};
+$('#sendAllBtn').onclick = () => sendAll(S.cur.id, S.cur.quick.sendable, S.cur.subfolders.length ? 'nesta pasta e nas subpastas' : 'nesta pasta');
+$('#subfolders').addEventListener('click', async (e) => {
+  if (!e.target.closest('#addSubBtn')) return;
+  const f = await newFolder(S.cur.id);
+  if (f) { loadFolder(); refreshList(); }
+});
+const refreshList = () => api('/api/folders').then((f) => { S.folders = f; fillFolderSelect(); }).catch(() => {});
 
 $('#folderMenu').onclick = async () => {
   const f = S.cur; if (!f) return;
   const v = await menu(f.name, [
+    { label: '+ Nova subpasta', value: 'sub' },
     { label: 'Renomear', value: 'rename' },
     { label: `Destino no Bunny: ${{ auto: 'automático', storage: 'Storage', stream: 'Stream' }[f.dest]}`, value: 'dest' },
     { label: 'Baixar .zip do que está no sistema', value: 'zip' },
     { label: 'Apagar pasta', value: 'delete', danger: true },
   ]);
   try {
-    if (v === 'rename') {
+    if (v === 'sub') { if (await newFolder(f.id)) refreshList(); }
+    else if (v === 'rename') {
       const name = await ask('Novo nome', { value: f.name, ok: 'Salvar' });
       if (name) { await api('/api/folders/' + f.id, { method: 'PATCH', body: { name } }); toast('Renomeada. No Bunny ela continua na mesma pasta.'); }
     } else if (v === 'dest') {
@@ -604,17 +633,19 @@ $('#folderMenu').onclick = async () => {
       const ids = f.media.filter((m) => m.local && m.status === 'ready').map((m) => m.id);
       ids.length ? zipIds(ids) : toast('Nada no sistema para baixar.');
     } else if (v === 'delete') {
-      const unsafe = f.media.filter((m) => m.local && m.bunny_status !== 'sent').length;
-      if (await confirmBox(`Apagar a pasta "${f.name}"?`, `${unsafe ? `<b>${plural(unsafe, 'arquivo', 'arquivos')} ainda não ${unsafe === 1 ? 'foi' : 'foram'} para o Bunny e ${unsafe === 1 ? 'será perdido' : 'serão perdidos'}.</b><br>` : ''}O que já está no Bunny não é afetado.`, 'Apagar pasta', true)) {
+      const unsafe = (f.deep.local || 0) - (f.deep.freeable || 0);
+      const subs = f.subfolders.length ? `As subpastas (${f.subfolders.length}) também serão apagadas.<br>` : '';
+      if (await confirmBox(`Apagar a pasta "${f.name}"?`, `${subs}${unsafe ? `<b>${plural(unsafe, 'arquivo', 'arquivos')} ainda não ${unsafe === 1 ? 'foi' : 'foram'} para o Bunny e ${unsafe === 1 ? 'será perdido' : 'serão perdidos'}.</b><br>` : ''}O que já está no Bunny não é afetado.`, 'Apagar pasta', true)) {
         await api('/api/folders/' + f.id, { method: 'DELETE' });
-        location.hash = '';
+        S.folders = S.folders.filter((x) => x.id !== f.id);
+        location.hash = f.parent_id ? '#f/' + f.parent_id : '';
       }
     }
     if (v && v !== 'delete') loadFolder();
   } catch (e) { fail(e); }
 };
 
-$('#backBtn').onclick = () => { location.hash = ''; };
+$('#backBtn').onclick = () => { location.hash = S.cur?.parent_id ? '#f/' + S.cur.parent_id : ''; };
 
 // ---------- Visualizador ----------
 let viewing = null;

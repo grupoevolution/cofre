@@ -7,7 +7,7 @@ PWA + servidor Node para juntar mídias em **pastas** e mandar para o **Bunny**.
 Você cola (ou compartilha do celular) links de álbuns do erome numa pasta. O servidor baixa as mídias, e daí você edita (recorta, corta a duração, borra, transforma foto em vídeo), envia ao Bunny uma por uma ou em lote e libera o espaço da VPS. A pasta continua no sistema para você ir alimentando.
 
 ## Fluxo
-1. **Crie uma pasta** (ex.: "Criativos de imagem").
+1. **Crie uma pasta** (ex.: "Criativos de imagem"). Dentro dela dá para criar **subpastas** (ex.: "Chats › Fulana"), em quantos níveis quiser, e ainda ter mídias soltas. No Bunny Storage a estrutura vira `/chats/fulana/arquivo`; no Stream, a coleção se chama "Chats / Fulana". Os atalhos de enviar/apagar tudo dentro de uma pasta incluem as subpastas.
 2. **Cole os links** (erome, xvideos, TikTok). Pode colar vários de uma vez, um por linha ou misturados num texto.
 3. Embaixo de cada mídia ficam **✎ Editar** e **↑ Bunny**. O download fica no menu **⋯**.
 4. **Selecionar**: marque uma por uma ou use "Selecionar todas" (respeita a busca e os filtros), e depois escolha Enviar ao Bunny, Mover, .zip, Tentar de novo ou Apagar.
